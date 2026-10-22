@@ -1,12 +1,15 @@
 /**
- * dsh-mcp-setting 浏览器半：在 Settings 里注册「MCP 链接」页面。
+ * dsh-mcp-setting 浏览器半：在 Settings 和左侧全局面板里注册「MCP 链接」页面。
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { McpSettingsController } from './controller.js'
-import { McpSettingsSection } from './Section.js'
+import { McpPanelIcon } from './McpPanelIcon.js'
+import { McpSettingsPanel, McpSettingsSection } from './Section.js'
 import { en, zh, NS, type McpLocaleKey } from './locales.js'
 import { STYLE_TEXT } from './styles.js'
 
@@ -16,6 +19,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'settings.mcpSetting': McpLocaleKey
   }
 }
+
+/** 左侧全局面板的 id，与主面板 key 保持一致。 */
+const PANEL_ID = 'mcp-settings' as MainPanelId
 
 /** 浏览器半需要的服务。 */
 export const inject = ['slots', 'locale', 'workspaces']
@@ -45,4 +51,17 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => controller.inject(),
   }, McpSettingsSection)), 'dsh-mcp-setting: settings section')
+  ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: PANEL_ID,
+    locale: NS,
+    inject: () => controller.inject(),
+  }, McpSettingsPanel)), 'dsh-mcp-setting: main panel')
+  ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+    name: 'sidebar.panellist',
+    id: PANEL_ID,
+    order: 1000,
+    label: () => t('nav'),
+    locale: NS,
+  }, McpPanelIcon)), 'dsh-mcp-setting: sidebar entry')
 }

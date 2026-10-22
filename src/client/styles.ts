@@ -1,5 +1,12 @@
 /** 设置页样式。作为插件自有 style 标签注入，随 fiber 释放移除。 */
 export const STYLE_TEXT = `
+.dsh-mcp-panel {
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 24px 32px 40px;
+}
+.dsh-mcp-panel .dsh-mcp-page { width: 100%; max-width: 960px; margin: 0 auto; }
 .dsh-mcp-page {
   display: flex;
   flex-direction: column;

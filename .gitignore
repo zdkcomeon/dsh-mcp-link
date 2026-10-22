@@ -12,6 +12,9 @@ pnpm-debug.log*
 .vscode/
 *.iml
 
+# Local tool data
+.codegraph/
+
 # Build output and test artifacts
 lib/
 *.tsbuildinfo

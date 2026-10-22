@@ -1,7 +1,7 @@
 /** MCP 链接设置页。 */
 import { useEffect, useState } from 'react'
 import { Button, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CreateEntryRequest, DshMcpEntry, EditableEntry, EntrySettings, McpSourceGroup, PublicMcpServer } from '../protocol.js'
 import type { McpSettingsInjected, McpSnapshot, WorkspaceOption } from './controller.js'
 import { EntryEditor } from './EntryEditor.js'
@@ -11,8 +11,7 @@ import { WorkspaceSelect } from './WorkspaceSelect.js'
 
 /** 页面 props：运行时关闭设置、locale 文案、注入的数据与动作。 */
 export type McpSettingsSectionProps =
-  PropsRuntime<'settings.section'>
-  & PropsLocale<typeof NS>
+  PropsLocale<typeof NS>
   & InjectFace<McpSettingsInjected>
 
 /** 单个 MCP 服务行。 */
@@ -572,6 +571,15 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         )}
       </Modal>
     </section>
+  )
+}
+
+/** 主面板里的 MCP 链接页，复用设置页的同一份内容。 */
+export function McpSettingsPanel(props: McpSettingsSectionProps) {
+  return (
+    <div className="dsh-mcp-panel">
+      <McpSettingsSection {...props} />
+    </div>
   )
 }
 

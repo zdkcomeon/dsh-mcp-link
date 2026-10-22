@@ -1,0 +1,89 @@
+{
+  "name": "dsh-mcp-setting",
+  "version": "0.1.0",
+  "description": "把系统里已有的 MCP 配置接入当前 DeepSeek Harness profile",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-api-workspace-controller"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22.19",
+    "dsh": "^0.2.0-rc.2"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "verify": "npm run typecheck && npm run build && npm test",
+    "prepare": "npm run build"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.18.4",
+    "smol-toml": "^1.4.2",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-store": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
+    "@types/node": "^22.15.0",
+    "@types/react": "~18.3.1",
+    "esbuild": "^0.28.2",
+    "react": "^18.2.0",
+    "typescript": "^5.9.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zdkcomeon/dsh-mcp-setting.git"
+  },
+  "homepage": "https://github.com/zdkcomeon/dsh-mcp-setting",
+  "bugs": {
+    "url": "https://github.com/zdkcomeon/dsh-mcp-setting/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "mcp",
+    "model-context-protocol"
+  ]
+}

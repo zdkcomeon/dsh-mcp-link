@@ -1,0 +1,5 @@
+# dsh-mcp-setting 插件自己的配置行。安装到 profile 后，
+# profile 会把这行插入当前 DSH 配置树，浏览器半同样挂在这一行上。
+- insert:
+    - id: dsh-mcp-setting
+      name: dsh-mcp-setting

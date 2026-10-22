@@ -76,7 +76,7 @@ export function registerRoutes(context: RoutesContext): void {
   for (const route of routes) {
     context.effect(
       () => connection.fetch.register(route),
-      `dsh-mcp-setting: ${route.path}`,
+      `dsh-mcp-link: ${route.path}`,
     )
   }
 }

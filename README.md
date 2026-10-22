@@ -1,12 +1,16 @@
-# dsh-mcp-setting
+# dsh-mcp-link
 
 在 DeepSeek Harness 中集中查看本机 MCP 配置，并将选中的服务接入当前 DSH profile。
 
-`dsh-mcp-setting` 是一个 DSH 插件，提供左侧导航入口和设置页入口，支持扫描系统 MCP 配置、按来源切换、扫描项目工作区、JSON 导入、图形化新增、编辑和移除。
+`dsh-mcp-link` 是一个 DSH 插件，提供左侧导航入口和设置页入口，支持扫描系统 MCP 配置、按来源切换、扫描项目工作区、JSON 导入、图形化新增、编辑和移除。
 
 DSH 0.2+ · Node.js 22.19+ · MIT License
 
-![MCP 链接主面板](docs/screenshots/01-overview.png)
+[![npm version](https://img.shields.io/npm/v/dsh-mcp-link.svg)](https://www.npmjs.com/package/dsh-mcp-link)
+
+npm: [dsh-mcp-link](https://www.npmjs.com/package/dsh-mcp-link) · GitHub: [zdkcomeon/dsh-mcp-setting](https://github.com/zdkcomeon/dsh-mcp-setting)
+
+![MCP 链接主面板](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/01-overview.png)
 
 ## 目录
 
@@ -43,13 +47,13 @@ DSH 0.2+ · Node.js 22.19+ · MIT License
 
 | 编辑 MCP | 新增 MCP |
 | --- | --- |
-| [![编辑 MCP](docs/screenshots/02-edit-mcp.png)](docs/screenshots/02-edit-mcp.png) | [![新增 MCP](docs/screenshots/03-add-mcp.png)](docs/screenshots/03-add-mcp.png) |
+| [![编辑 MCP](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/02-edit-mcp.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/02-edit-mcp.png) | [![新增 MCP](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/03-add-mcp.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/03-add-mcp.png) |
 
 ### JSON 导入与图形配置
 
 | JSON 导入 | 图形配置 |
 | --- | --- |
-| [![JSON 导入](docs/screenshots/04-json-import.png)](docs/screenshots/04-json-import.png) | [![图形配置](docs/screenshots/05-gui-config.png)](docs/screenshots/05-gui-config.png) |
+| [![JSON 导入](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/04-json-import.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/04-json-import.png) | [![图形配置](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/05-gui-config.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/05-gui-config.png) |
 
 ## 支持的来源
 
@@ -82,13 +86,13 @@ DSH 0.2+ · Node.js 22.19+ · MIT License
 ### 从本地目录安装
 
 ```sh
-dsh plugin --profile desktop add /absolute/path/to/dsh-mcp-setting
+dsh plugin --profile desktop add /absolute/path/to/dsh-mcp-link
 ```
 
 Web profile 使用 `--profile web`：
 
 ```sh
-dsh plugin --profile web add /absolute/path/to/dsh-mcp-setting
+dsh plugin --profile web add /absolute/path/to/dsh-mcp-link
 ```
 
 安装会把这个包加入 profile 的 `dsh.profile.bundles`，并在 profile 目录中建立依赖。新增 bundle 后需要重启 DSH；只修改 `cordis.patch.yml` 时，HMR 会热加载。
@@ -96,12 +100,11 @@ dsh plugin --profile web add /absolute/path/to/dsh-mcp-setting
 ### 从 npm 或 Git 安装
 
 ```sh
-# 如果包已发布到 npm
-dsh plugin --profile desktop add dsh-mcp-setting
-dsh plugin --profile desktop add github:<owner>/<repo>
+dsh plugin --profile desktop add dsh-mcp-link
+dsh plugin --profile desktop add github:zdkcomeon/dsh-mcp-setting
 ```
 
-从 Git 安装时由 `prepare` 执行构建。pnpm 默认会拦截依赖的构建脚本，需要先在 profile 的构建许可中允许 `dsh-mcp-setting`。也可以先在本地构建，再通过本地路径安装：
+从 Git 安装时由 `prepare` 执行构建。pnpm 默认会拦截依赖的构建脚本，需要先在 profile 的构建许可中允许 `dsh-mcp-link`。也可以先在本地构建，再通过本地路径安装：
 
 ```sh
 pnpm install

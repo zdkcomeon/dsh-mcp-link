@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-setting Host 半：扫描系统 MCP 配置，并通过认证后的 `/api/mcp-setting/*`
+ * dsh-mcp-link Host 半：扫描系统 MCP 配置，并通过认证后的 `/api/mcp-setting/*`
  * 接口把选中的 MCP 写入当前 profile。
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -7,7 +7,7 @@ import z from '@deepseek-ai/schemastery'
 import { registerRoutes } from './host/routes.js'
 import type { LoaderLike, ProfileLike } from './host/scan.js'
 
-export const name = 'dsh-mcp-setting'
+export const name = 'dsh-mcp-link'
 export const inject = ['connection', 'loader']
 
 /** 插件配置。 */

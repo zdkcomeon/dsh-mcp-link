@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-setting 浏览器半：在 Settings 和左侧全局面板里注册「MCP 链接」页面。
+ * dsh-mcp-link 浏览器半：在 Settings 和左侧全局面板里注册「MCP 链接」页面。
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -32,17 +32,17 @@ export const inject = ['slots', 'locale', 'workspaces']
  */
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-mcp-setting: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-mcp-link: dictionaries')
   const controller = new McpSettingsController(ctx.workspaces.list)
-  ctx.effect(() => () => { controller.dispose() }, 'dsh-mcp-setting: controller')
+  ctx.effect(() => () => { controller.dispose() }, 'dsh-mcp-link: controller')
   ctx.effect(() => {
     const style = document.createElement('style')
-    style.dataset.plugin = 'dsh-mcp-setting'
-    style.dataset.pluginCss = 'dsh-mcp-setting/page'
+    style.dataset.plugin = 'dsh-mcp-link'
+    style.dataset.pluginCss = 'dsh-mcp-link/page'
     style.textContent = STYLE_TEXT
     document.head.appendChild(style)
     return () => { style.remove() }
-  }, 'dsh-mcp-setting: styles')
+  }, 'dsh-mcp-link: styles')
   ctx.effect(() => ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'mcp-setting',
@@ -50,18 +50,18 @@ export function apply(ctx: ClientContext): void {
     label: () => t('nav'),
     locale: NS,
     inject: () => controller.inject(),
-  }, McpSettingsSection)), 'dsh-mcp-setting: settings section')
+  }, McpSettingsSection)), 'dsh-mcp-link: settings section')
   ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',
     key: PANEL_ID,
     locale: NS,
     inject: () => controller.inject(),
-  }, McpSettingsPanel)), 'dsh-mcp-setting: main panel')
+  }, McpSettingsPanel)), 'dsh-mcp-link: main panel')
   ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist',
     id: PANEL_ID,
     order: 1000,
     label: () => t('nav'),
     locale: NS,
-  }, McpPanelIcon)), 'dsh-mcp-setting: sidebar entry')
+  }, McpPanelIcon)), 'dsh-mcp-link: sidebar entry')
 }

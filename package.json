@@ -1,7 +1,7 @@
 {
-  "name": "dsh-mcp-setting",
+  "name": "dsh-mcp-link",
   "version": "0.1.0",
-  "description": "把系统里已有的 MCP 配置接入当前 DeepSeek Harness profile",
+  "description": "在 DeepSeek Harness 中扫描、接入、新增和编辑 MCP 配置",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -48,6 +48,7 @@
     "build": "node scripts/build.mjs",
     "test": "node --test tests/*.test.mjs",
     "verify": "npm run typecheck && npm run build && npm test",
+    "prepublishOnly": "npm run verify",
     "prepare": "npm run build"
   },
   "peerDependencies": {
@@ -75,6 +76,9 @@
     "typescript": "^5.9.2"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zdkcomeon/dsh-mcp-setting.git"

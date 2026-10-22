@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-setting 的浏览器端与 Host 端共用协议。
+ * dsh-mcp-link 的浏览器端与 Host 端共用协议。
  *
  * 这里只放可序列化数据和路径常量，不放任何 Node 或浏览器专属实现。
  */

@@ -10,6 +10,8 @@ DSH 0.2+ · Node.js 22.19+ · MIT License
 
 npm: [dsh-mcp-link](https://www.npmjs.com/package/dsh-mcp-link) · GitHub: [zdkcomeon/dsh-mcp-link](https://github.com/zdkcomeon/dsh-mcp-link)
 
+发版说明：[RELEASE_NOTES.md](RELEASE_NOTES.md)
+
 ![MCP 链接主面板](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/01-overview.png)
 
 ## 目录

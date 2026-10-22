@@ -71,6 +71,63 @@ export interface DshMcpEntry {
   readonly managed: boolean
 }
 
+/** 编辑表单中的一组键值；secret 为 true 时不返回原值。 */
+export interface EditablePair {
+  readonly key: string
+  /** 敏感值不回传；其余值回传用于编辑。 */
+  readonly value?: string
+  readonly secret: boolean
+  /** 原值是 `!!js` 表达式；保持不变时 Host 会原样保留。 */
+  readonly expression?: boolean
+}
+
+/** 当前 profile 中一条可由本插件编辑的 MCP 条目。 */
+export interface EditableEntry {
+  readonly entryId: string
+  readonly serverName: string
+  readonly transport: 'stdio' | 'streamable-http'
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly env: readonly EditablePair[]
+  readonly cwd?: string
+  readonly url?: string
+  readonly headers: readonly EditablePair[]
+  readonly toolCallTimeoutMs?: number
+}
+
+/** `GET /api/mcp-setting/entry` 的响应。 */
+export interface EntryDetailResponse {
+  readonly ok: true
+  readonly entry: EditableEntry
+}
+
+/** 提交编辑时的一组键值；省略 value 表示保留原值。 */
+export interface EditablePairInput {
+  readonly key: string
+  readonly value?: string
+}
+
+/** 更新一条已接入 MCP 的配置。 */
+export interface UpdateEntryRequest {
+  readonly entryId: string
+  readonly serverName: string
+  readonly transport: 'stdio' | 'streamable-http'
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly env: readonly EditablePairInput[]
+  readonly cwd?: string
+  readonly url?: string
+  readonly headers: readonly EditablePairInput[]
+  readonly toolCallTimeoutMs?: number
+}
+
+/** 更新结果。 */
+export interface UpdateEntryResponse {
+  readonly ok: true
+  readonly applied: boolean
+  readonly restartRequired: boolean
+}
+
 /** 项目扫描结果。 */
 export interface ProjectScan {
   readonly path: string

@@ -1,6 +1,8 @@
 /** 设置页的数据读取与动作控制器。 */
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
+  EditableEntry,
+  EntryDetailResponse,
   ErrorResponse,
   LinkRequest,
   LinkResponse,
@@ -9,6 +11,8 @@ import type {
   ScanResponse,
   UnlinkRequest,
   UnlinkResponse,
+  UpdateEntryRequest,
+  UpdateEntryResponse,
 } from '../protocol.js'
 import { API_BASE } from '../protocol.js'
 import { SnapshotStore } from './store.js'
@@ -18,6 +22,7 @@ import type { WorkspaceSourceLike } from './workspaces.js'
 export type McpNotice =
   | { readonly kind: 'linked'; readonly restartRequired: boolean }
   | { readonly kind: 'unlinked'; readonly restartRequired: boolean }
+  | { readonly kind: 'updated'; readonly restartRequired: boolean }
   | { readonly kind: 'projects-saved' }
   | { readonly kind: 'error'; readonly message: string }
 
@@ -54,6 +59,10 @@ export interface McpSettingsInjected {
   clearNotice: () => void
   link: (key: string, serverName: string) => Promise<boolean>
   unlink: (entryId: string) => Promise<boolean>
+  /** 读取一条已接入 MCP 的可编辑配置。 */
+  loadEntry: (entryId: string) => Promise<EditableEntry>
+  /** 保存一条已接入 MCP 的配置。 */
+  updateEntry: (request: UpdateEntryRequest) => Promise<boolean>
   /** 勾选或取消一个工作区/自定义路径。 */
   setProjectSelected: (path: string, selected: boolean) => Promise<boolean>
   /** 清空所有已选路径。 */
@@ -98,7 +107,7 @@ export class McpSettingsController {
       }
     })
     try {
-      const data = await request<ScanResponse>('/scan')
+      const data = await apiRequest<ScanResponse>('/scan')
       if (this.stale(generation)) return
       this.selectedPaths = new Set(data.savedProjects)
       this.patch(current => {
@@ -128,7 +137,7 @@ export class McpSettingsController {
     this.patch(current => ({ ...current, busy: addBusy(current.busy, busyKey) }))
     try {
       const body: LinkRequest = { key, serverName }
-      const result = await request<LinkResponse>('/link', {
+      const result = await apiRequest<LinkResponse>('/link', {
         method: 'POST',
         body: JSON.stringify(body),
       })
@@ -149,11 +158,38 @@ export class McpSettingsController {
     this.patch(current => ({ ...current, busy: addBusy(current.busy, busyKey) }))
     try {
       const body: UnlinkRequest = { entryId }
-      const result = await request<UnlinkResponse>('/unlink', {
+      const result = await apiRequest<UnlinkResponse>('/unlink', {
         method: 'POST',
         body: JSON.stringify(body),
       })
       this.setNotice({ kind: 'unlinked', restartRequired: result.restartRequired })
+      await this.refresh()
+      return true
+    } catch (error) {
+      this.setNotice({ kind: 'error', message: messageOf(error) })
+      return false
+    } finally {
+      this.patch(current => ({ ...current, busy: removeBusy(current.busy, busyKey) }))
+    }
+  }
+
+  /** 读取一条已接入 MCP 的完整连接信息。 */
+  async loadEntry(entryId: string): Promise<EditableEntry> {
+    const response = await apiRequest<EntryDetailResponse>(`/entry?entryId=${encodeURIComponent(entryId)}`)
+    return response.entry
+  }
+
+  /** 保存一条已接入 MCP 的配置。 */
+  async updateEntry(request: UpdateEntryRequest): Promise<boolean> {
+    const busyKey = `update:${request.entryId}`
+    this.patch(current => ({ ...current, busy: addBusy(current.busy, busyKey) }))
+    try {
+      const body = request
+      const result = await apiRequest<UpdateEntryResponse>('/entry', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      })
+      this.setNotice({ kind: 'updated', restartRequired: result.restartRequired })
       await this.refresh()
       return true
     } catch (error) {
@@ -172,7 +208,7 @@ export class McpSettingsController {
     this.patch(current => ({ ...current, busy: addBusy(current.busy, 'projects') }))
     try {
       const body: ProjectsRequest = { projects }
-      await request<ProjectsResponse>('/projects', {
+      await apiRequest<ProjectsResponse>('/projects', {
         method: 'PUT',
         body: JSON.stringify(body),
       })
@@ -217,6 +253,8 @@ export class McpSettingsController {
       clearNotice: () => { this.setNotice(undefined) },
       link: (key, serverName) => this.link(key, serverName),
       unlink: entryId => this.unlink(entryId),
+      loadEntry: entryId => this.loadEntry(entryId),
+      updateEntry: request => this.updateEntry(request),
       setProjectSelected: (path, selected) => this.setProjectSelected(path, selected),
       clearProjects: () => this.clearProjects(),
       addProject: path => this.addProject(path),
@@ -296,7 +334,7 @@ export class McpSettingsController {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'same-origin',
     cache: 'no-store',

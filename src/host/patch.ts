@@ -1,8 +1,9 @@
 /** 读写当前 profile 的 `cordis.patch.yml`，只改 MCP 客户端插入行。 */
 import { readFile, writeFile } from 'node:fs/promises'
-import { isMap, isSeq, parseDocument, visit, Scalar, type Document, type YAMLMap, type YAMLSeq } from 'yaml'
+import { isDeepStrictEqual } from 'node:util'
+import { isMap, isScalar, isSeq, parseDocument, visit, Scalar, type Document, type YAMLMap, type YAMLSeq } from 'yaml'
 import type { PatchRow } from './types.js'
-import { writeFileAtomic } from './util.js'
+import { isRecord, writeFileAtomic } from './util.js'
 
 const JS_TAG = 'tag:yaml.org,2002:js'
 const MCP_MODULE = '@deepseek-ai/dsh-mcp-client'
@@ -161,6 +162,85 @@ export async function saveProfilePatch(patch: ProfilePatch): Promise<void> {
 /** 写入失败时恢复原始内容。 */
 export async function restoreProfilePatch(patch: ProfilePatch): Promise<void> {
   await writeFile(patch.file, patch.original, { mode: 0o600 })
+}
+
+/** 读取一条 inserted MCP 行的配置对象。 */
+export function rowConfig(row: InsertedRow): Record<string, unknown> {
+  const config = row.map.get('config')
+  if (!isMap(config)) return {}
+  const value = config.toJSON()
+  return isRecord(value) ? value : {}
+}
+
+/** 判断某个 env/header 值是否是 `!!js` 表达式。 */
+export function isExpressionValue(row: InsertedRow, section: 'env' | 'headers', key: string): boolean {
+  const config = row.map.get('config')
+  if (!isMap(config)) return false
+  const values = config.get(section)
+  if (!isMap(values)) return false
+  const node = nodeOf(values, key)
+  return isScalar(node) && node.tag === JS_TAG
+}
+
+/**
+ * 更新一条 inserted MCP 行的配置，同时保留未变化值的 YAML 节点（包括 `!!js` 标签）。
+ * @param patch - 待修改的 profile patch。
+ * @param row - 目标 inserted 行。
+ * @param next - 新的配置对象；未出现的键会被删除。
+ */
+export function updateRowConfig(patch: ProfilePatch, row: InsertedRow, next: Record<string, unknown>): void {
+  const config = row.map.get('config')
+  if (!isMap(config)) {
+    row.map.set('config', patch.document.createNode(next))
+    restoreJsExpressions(patch.document)
+    return
+  }
+  for (const key of config.items.map(pair => String(pair.key))) {
+    if (!Object.hasOwn(next, key)) config.delete(key)
+  }
+  for (const [key, value] of Object.entries(next)) {
+    if (value === undefined) {
+      config.delete(key)
+      continue
+    }
+    const current = config.get(key)
+    if ((key === 'env' || key === 'headers') && isRecord(value) && isMap(current)) {
+      updateStringMap(current, value, patch.document)
+      continue
+    }
+    if (samePlain(current, value)) continue
+    config.set(key, patch.document.createNode(value))
+  }
+  restoreJsExpressions(patch.document)
+}
+
+function updateStringMap(current: YAMLMap, next: Record<string, unknown>, document: Document): void {
+  for (const key of current.items.map(pair => String(pair.key))) {
+    if (!Object.hasOwn(next, key)) current.delete(key)
+  }
+  for (const [key, value] of Object.entries(next)) {
+    const node = nodeOf(current, key)
+    const text = typeof value === 'string' ? value : String(value)
+    if (isScalar(node) && node.value === text) continue
+    current.set(key, document.createNode(text))
+  }
+}
+
+function nodeOf(map: YAMLMap, key: string): unknown {
+  return map.items.find(pair => String(pair.key) === key)?.value
+}
+
+function samePlain(node: unknown, value: unknown): boolean {
+  if (node === undefined) return false
+  if (isScalar(node)) return node.value === value
+  if (isMap(node) || isSeq(node)) {
+    try {
+      return isDeepStrictEqual(node.toJSON(), value)
+    } catch {
+      return false
+    }
+  }
+  return isDeepStrictEqual(node, value)
 }
 
 /** 把一条 MCP 扫描结果转成 mcp-client 配置对象。 */

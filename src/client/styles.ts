@@ -164,6 +164,40 @@ export const STYLE_TEXT = `
 .dsh-mcp-project-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .dsh-mcp-project-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .dsh-mcp-project-name { font-weight: 500; }
+.dsh-mcp-editor-content { max-height: min(68vh, 620px); overflow-y: auto; }
+.dsh-mcp-editor { display: flex; flex-direction: column; gap: 14px; }
+.dsh-mcp-field { display: flex; flex-direction: column; gap: 6px; }
+.dsh-mcp-field-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dsh-mcp-field-label { font-weight: 500; font-size: 13px; }
+.dsh-mcp-field-hint { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.dsh-mcp-textarea {
+  width: 100%;
+  min-height: 82px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 18px;
+  resize: vertical;
+}
+.dsh-mcp-textarea:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 1px;
+}
+.dsh-mcp-pair-list { display: flex; flex-direction: column; gap: 6px; }
+.dsh-mcp-pair-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
+  align-items: center;
+  gap: 6px;
+}
+@media (max-width: 640px) {
+  .dsh-mcp-pair-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
 .dsh-mcp-dialog-body { display: flex; flex-direction: column; gap: 12px; }
 .dsh-mcp-dialog-summary {
   display: flex;

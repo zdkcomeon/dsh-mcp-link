@@ -1,18 +1,31 @@
 /** 接入与移除 MCP 的 Host 动作。 */
 import { join } from 'node:path'
-import type { LinkResponse, UnlinkResponse } from '../protocol.js'
+import type {
+  EditableEntry,
+  EditablePair,
+  EditablePairInput,
+  EntryDetailResponse,
+  LinkResponse,
+  UnlinkResponse,
+  UpdateEntryRequest,
+  UpdateEntryResponse,
+} from '../protocol.js'
 import {
   appendMcpRow,
   insertedRows,
+  isExpressionValue,
   readProfilePatch,
   removeMcpRow,
   restoreProfilePatch,
+  rowConfig,
   saveProfilePatch,
+  updateRowConfig,
+  type InsertedRow,
 } from './patch.js'
 import { scanAll, sameConnection, validateProjectPath, type LoaderLike, type ProfileLike } from './scan.js'
 import { readProjects, writeProjects } from './state.js'
 import type { PatchRow, RawMcpServer } from './types.js'
-import { delay, sanitizeServerName, uniqueEntryId, uniqueName } from './util.js'
+import { asString, asStringArray, asStringRecord, delay, isRecord, looksSecret, sanitizeServerName, uniqueEntryId, uniqueName } from './util.js'
 
 /** 动作失败时携带 HTTP 状态码与稳定错误码。 */
 export class ActionError extends Error {
@@ -134,7 +147,15 @@ async function linkServerUnlocked(
   if (!context.liveReload) {
     return { ok: true, entryId, serverName, applied: false, restartRequired: true }
   }
-  const applied = await waitFor(() => entryActive(context.loader, entryId), 5000)
+  const applied = await waitFor(() => entryConfigured(context.loader, entryId, {
+    serverName,
+    transport: row.transport,
+    ...(row.command === undefined ? {} : { command: row.command }),
+    ...(row.args === undefined ? {} : { args: row.args }),
+    ...(row.url === undefined ? {} : { url: row.url }),
+    ...(row.env === undefined ? {} : { env: row.env }),
+    ...(row.headers === undefined ? {} : { headers: row.headers }),
+  }), 5000)
   if (!applied && entryState(context.loader, entryId) === 3) {
     const rollback = await readProfilePatch(context.profile.patchPath)
     removeMcpRow(rollback, entryId)
@@ -169,6 +190,209 @@ async function unlinkServerUnlocked(context: ActionContext, entryId: string): Pr
   return { ok: true, applied, restartRequired: !applied }
 }
 
+/** 读取一条可编辑 MCP 的完整连接信息；敏感值只返回键名。 */
+export async function entryDetail(context: ActionContext, entryId: string): Promise<EntryDetailResponse> {
+  if (entryId.trim() === '') throw new ActionError(400, 'invalid-request', '缺少 entryId')
+  const patch = await readProfilePatch(context.profile.patchPath)
+  const row = insertedRows(patch).find(item => item.id === entryId)
+  if (row === undefined) {
+    throw new ActionError(409, 'not-editable', '这条 MCP 不是由当前 profile 的 patch 插入的，不能在这里编辑')
+  }
+  const config = rowConfig(row)
+  const transport = transportOfConfig(config)
+  if (transport === undefined) {
+    throw new ActionError(409, 'unsupported-transport', '只能编辑 stdio 或 Streamable HTTP 的 MCP')
+  }
+  const command = asString(config.command)
+  const args = asStringArray(config.args)
+  const cwd = asString(config.cwd)
+  const url = asString(config.url)
+  const timeout = typeof config.toolCallTimeoutMs === 'number' ? config.toolCallTimeoutMs : undefined
+  const entry: EditableEntry = {
+    entryId,
+    serverName: asString(config.serverName) ?? entryId,
+    transport,
+    ...(command === undefined ? {} : { command }),
+    ...(args === undefined ? {} : { args }),
+    env: pairsOf(config.env, row, 'env'),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(url === undefined ? {} : { url }),
+    headers: pairsOf(config.headers, row, 'headers'),
+    ...(timeout === undefined ? {} : { toolCallTimeoutMs: timeout }),
+  }
+  return { ok: true, entry }
+}
+
+/** 更新一条已接入 MCP 的连接信息。 */
+export function updateEntry(context: ActionContext, request: UpdateEntryRequest): Promise<UpdateEntryResponse> {
+  return withActionLock(() => updateEntryUnlocked(context, request))
+}
+
+async function updateEntryUnlocked(context: ActionContext, request: UpdateEntryRequest): Promise<UpdateEntryResponse> {
+  if (typeof request.entryId !== 'string' || request.entryId.trim() === '') {
+    throw new ActionError(400, 'invalid-request', '缺少 entryId')
+  }
+  const serverName = typeof request.serverName === 'string' ? request.serverName.trim() : ''
+  if (!/^[A-Za-z0-9_-]{1,32}$/u.test(serverName)) {
+    throw new ActionError(400, 'invalid-name', '名称只能包含字母、数字、下划线和短横线，长度 1-32')
+  }
+  if (request.transport !== 'stdio' && request.transport !== 'streamable-http') {
+    throw new ActionError(400, 'invalid-transport', '传输方式必须是 stdio 或 streamable-http')
+  }
+  const patch = await readProfilePatch(context.profile.patchPath)
+  const row = insertedRows(patch).find(item => item.id === request.entryId)
+  if (row === undefined) {
+    throw new ActionError(409, 'not-editable', '这条 MCP 不是由当前 profile 的 patch 插入的，不能在这里编辑')
+  }
+  const previous = structuredClone(rowConfig(row))
+  const takenNames = namesOfOtherEntries(context.loader, patch, request.entryId)
+  if (takenNames.has(serverName)) {
+    throw new ActionError(409, 'name-conflict', `DSH 里已经有名为 ${serverName} 的 MCP`)
+  }
+  const next: Record<string, unknown> = { ...previous, serverName, transport: request.transport }
+  for (const key of ['command', 'args', 'env', 'cwd', 'url', 'headers', 'toolCallTimeoutMs']) delete next[key]
+  if (request.transport === 'stdio') {
+    const command = typeof request.command === 'string' ? request.command.trim() : ''
+    if (command === '') throw new ActionError(400, 'invalid-command', 'stdio MCP 需要 command')
+    next.command = command
+    if (request.args !== undefined) {
+      if (!Array.isArray(request.args) || request.args.some(item => typeof item !== 'string')) {
+        throw new ActionError(400, 'invalid-args', 'args 必须是字符串数组')
+      }
+      if (request.args.length > 0) next.args = [...request.args]
+    }
+    const env = mergePairs(previous.env, request.env, '环境变量')
+    if (Object.keys(env).length > 0) next.env = env
+    const cwd = typeof request.cwd === 'string' ? request.cwd.trim() : ''
+    if (cwd !== '') next.cwd = cwd
+  } else {
+    const url = typeof request.url === 'string' ? request.url.trim() : ''
+    assertHttpUrl(url)
+    next.url = url
+    const headers = mergePairs(previous.headers, request.headers, '请求头')
+    if (Object.keys(headers).length > 0) next.headers = headers
+  }
+  if (request.toolCallTimeoutMs !== undefined) {
+    if (!Number.isSafeInteger(request.toolCallTimeoutMs) || request.toolCallTimeoutMs <= 0) {
+      throw new ActionError(400, 'invalid-timeout', '超时必须是正整数毫秒值')
+    }
+    next.toolCallTimeoutMs = request.toolCallTimeoutMs
+  } else if (previous.toolCallTimeoutMs !== undefined && typeof previous.toolCallTimeoutMs !== 'number') {
+    // 表单不展示非数字表达式；未显式清空时原样保留。
+    next.toolCallTimeoutMs = previous.toolCallTimeoutMs
+  }
+  updateRowConfig(patch, row, next)
+  try {
+    await saveProfilePatch(patch)
+  } catch (error) {
+    await restoreProfilePatch(patch).catch(() => undefined)
+    throw new ActionError(500, 'write-failed', `写入 profile 配置失败：${errorMessage(error)}`)
+  }
+  if (!context.liveReload) {
+    return { ok: true, applied: false, restartRequired: true }
+  }
+  const expectation: EntryExpectation = {
+    serverName,
+    transport: request.transport,
+    ...(typeof next.command === 'string' ? { command: next.command } : {}),
+    ...(Array.isArray(next.args) && next.args.every(item => typeof item === 'string') ? { args: next.args } : {}),
+    ...(typeof next.url === 'string' ? { url: next.url } : {}),
+    ...(isRecord(next.env) ? { env: asStringRecord(next.env) ?? {} } : {}),
+    ...(isRecord(next.headers) ? { headers: asStringRecord(next.headers) ?? {} } : {}),
+  }
+  const applied = await waitFor(() => entryConfigured(context.loader, request.entryId, expectation), 5000)
+  if (!applied && entryState(context.loader, request.entryId) === 3) {
+    const rollback = await readProfilePatch(context.profile.patchPath)
+    const rollbackRow = insertedRows(rollback).find(item => item.id === request.entryId)
+    if (rollbackRow !== undefined) {
+      updateRowConfig(rollback, rollbackRow, previous)
+      await saveProfilePatch(rollback).catch(() => undefined)
+    }
+    throw new ActionError(500, 'startup-failed', '编辑后的 MCP 启动失败，已回滚配置；请检查命令和链接信息')
+  }
+  return { ok: true, applied, restartRequired: !applied }
+}
+
+function pairsOf(value: unknown, row: InsertedRow, section: 'env' | 'headers'): EditablePair[] {
+  const record = asStringRecord(value)
+  if (record === undefined) return []
+  return Object.entries(record).map(([key, item]) => {
+    const expression = isExpressionValue(row, section, key)
+    if (looksSecret(key)) {
+      return { key, secret: true, ...(expression ? { expression: true } : {}) }
+    }
+    return { key, value: item, secret: false, ...(expression ? { expression: true } : {}) }
+  })
+}
+
+function mergePairs(
+  previous: unknown,
+  pairs: readonly EditablePairInput[],
+  label: string,
+): Record<string, string> {
+  if (!Array.isArray(pairs)) throw new ActionError(400, 'invalid-pairs', `${label}必须是数组`)
+  const current = asStringRecord(previous) ?? {}
+  const next: Record<string, string> = {}
+  for (const pair of pairs) {
+    if (!isRecord(pair)) throw new ActionError(400, 'invalid-pairs', `${label}包含非法项`)
+    const key = typeof pair.key === 'string' ? pair.key.trim() : ''
+    if (key === '') throw new ActionError(400, 'invalid-pairs', `${label}的键不能为空`)
+    if (Object.hasOwn(next, key)) throw new ActionError(400, 'invalid-pairs', `${label}的键 ${key} 重复`)
+    if (Object.hasOwn(pair, 'value')) {
+      if (typeof pair.value !== 'string') throw new ActionError(400, 'invalid-pairs', `${label} ${key} 的值必须是字符串`)
+      next[key] = pair.value
+    } else {
+      if (!Object.hasOwn(current, key)) {
+        throw new ActionError(400, 'missing-value', `${label} ${key} 需要填写值`)
+      }
+      next[key] = current[key] ?? ''
+    }
+  }
+  return next
+}
+
+function assertHttpUrl(value: string): void {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('unsupported protocol')
+  } catch {
+    throw new ActionError(400, 'invalid-url', 'Streamable HTTP 需要合法的 http(s) URL')
+  }
+}
+
+function transportOfConfig(config: Record<string, unknown>): 'stdio' | 'streamable-http' | undefined {
+  const declared = asString(config.transport)
+  if (declared === 'stdio' || declared === 'streamable-http') return declared
+  if (asString(config.command) !== undefined) return 'stdio'
+  if (asString(config.url) !== undefined) return 'streamable-http'
+  return undefined
+}
+
+function namesOfOtherEntries(
+  loader: LoaderLike,
+  patch: Awaited<ReturnType<typeof readProfilePatch>>,
+  entryId: string,
+): Set<string> {
+  const names = new Set<string>()
+  for (const entry of loader.entries()) {
+    if (entry.options?.id === entryId) continue
+    if (!isMcpModule(entry.options?.name)) continue
+    const config = isRecord(entry.options?.config) ? entry.options.config : {}
+    const name = asString(config.serverName)
+    if (name !== undefined) names.add(name)
+  }
+  for (const item of insertedRows(patch)) {
+    if (item.id === entryId) continue
+    const name = asString(rowConfig(item).serverName)
+    if (name !== undefined) names.add(name)
+  }
+  return names
+}
+
+function isMcpModule(name: string | undefined): boolean {
+  return name === '@deepseek-ai/dsh-mcp-client' || (name?.endsWith('/dsh-mcp-client') ?? false)
+}
+
 /** 保存用户添加的项目路径。 */
 export function saveProjectPaths(
   context: ActionContext,
@@ -201,9 +425,32 @@ export function homePatchPath(profile: ProfileLike): string {
   return join(profile.home, 'cordis.patch.yml')
 }
 
-function entryActive(loader: LoaderLike, id: string): boolean {
+interface EntryExpectation {
+  readonly serverName: string
+  readonly transport: string
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly url?: string
+  readonly env?: Readonly<Record<string, string>>
+  readonly headers?: Readonly<Record<string, string>>
+}
+
+function entryConfigured(loader: LoaderLike, id: string, expected: EntryExpectation): boolean {
   const entry = [...loader.entries()].find(item => item.options?.id === id)
-  return entry !== undefined && entry.disabled !== true && entry.fiber?.state === 2
+  if (entry === undefined || entry.disabled === true || entry.fiber?.state !== 2) return false
+  const config = isRecord(entry.options?.config) ? entry.options.config : {}
+  if (asString(config.serverName) !== expected.serverName) return false
+  if (asString(config.transport) !== expected.transport) return false
+  if (asString(config.command) !== expected.command) return false
+  if ((asStringArray(config.args) ?? []).join('\0') !== (expected.args ?? []).join('\0')) return false
+  if (asString(config.url) !== expected.url) return false
+  if (envKeys(config.env) !== envKeys(expected.env)) return false
+  if (envKeys(config.headers) !== envKeys(expected.headers)) return false
+  return true
+}
+
+function envKeys(value: unknown): string {
+  return Object.keys(asStringRecord(value) ?? {}).sort().join(',')
 }
 
 function entryExists(loader: LoaderLike, id: string): boolean {

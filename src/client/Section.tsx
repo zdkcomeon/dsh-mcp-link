@@ -2,8 +2,9 @@
 import { useEffect, useState } from 'react'
 import { Button, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import type { DshMcpEntry, McpSourceGroup, PublicMcpServer } from '../protocol.js'
+import type { DshMcpEntry, EditableEntry, McpSourceGroup, PublicMcpServer, UpdateEntryRequest } from '../protocol.js'
 import type { McpSettingsInjected, McpSnapshot, WorkspaceOption } from './controller.js'
+import { EntryEditor } from './EntryEditor.js'
 import { NS } from './locales.js'
 import { WorkspaceSelect } from './WorkspaceSelect.js'
 
@@ -123,10 +124,12 @@ function SourceGroup(props: {
 function DshRow(props: {
   readonly entry: DshMcpEntry
   readonly busy: boolean
+  readonly loading: boolean
+  readonly onEdit: (entry: DshMcpEntry) => void
   readonly onUnlink: (entry: DshMcpEntry) => void
   readonly t: McpSettingsSectionProps['t']
 }) {
-  const { entry, busy, onUnlink, t } = props
+  const { entry, busy, loading, onEdit, onUnlink, t } = props
   const source = entry.source === 'profile'
     ? t('fromProfile')
     : entry.source === 'home' ? t('fromHome') : t('fromBundle')
@@ -153,10 +156,20 @@ function DshRow(props: {
         </div>
       </div>
       <div className="dsh-mcp-row-actions">
+        {entry.editable && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || loading}
+            onClick={() => { onEdit(entry) }}
+          >
+            {loading ? t('loading') : t('edit')}
+          </Button>
+        )}
         <Button
           size="sm"
           variant="outline"
-          disabled={busy || !entry.editable}
+          disabled={busy || loading || !entry.editable}
           title={entry.editable ? undefined : t('notEditable')}
           onClick={() => { onUnlink(entry) }}
         >
@@ -170,7 +183,7 @@ function DshRow(props: {
 /** 页面主体。 */
 export function McpSettingsSection(props: McpSettingsSectionProps) {
   const {
-    t, useMcpSettings, refresh, clearNotice, link, unlink,
+    t, useMcpSettings, refresh, clearNotice, link, unlink, loadEntry, updateEntry,
     setProjectSelected, clearProjects, addProject,
   } = props
   const snapshot: McpSnapshot = useMcpSettings(value => value)
@@ -179,6 +192,9 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   const [pendingName, setPendingName] = useState('')
   const [linkError, setLinkError] = useState('')
   const [pendingUnlink, setPendingUnlink] = useState<DshMcpEntry | null>(null)
+  const [editing, setEditing] = useState<EditableEntry | null>(null)
+  const [editLoadingId, setEditLoadingId] = useState<string | null>(null)
+  const [editError, setEditError] = useState('')
   // 只在挂载时读取一次；不要把注入面函数的身份放进依赖，否则父级重建注入面时会反复触发刷新。
   useEffect(() => { refresh() }, [])
 
@@ -239,6 +255,22 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
     const ok = await unlink(pendingUnlink.entryId)
     if (ok) setPendingUnlink(null)
   }
+  const openEditor = async (entry: DshMcpEntry) => {
+    setEditLoadingId(entry.entryId)
+    setEditError('')
+    try {
+      setEditing(await loadEntry(entry.entryId))
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setEditLoadingId(null)
+    }
+  }
+  const saveEntry = async (request: UpdateEntryRequest): Promise<boolean> => {
+    const ok = await updateEntry(request)
+    if (ok) setEditing(null)
+    return ok
+  }
   const notice = noticeOf(snapshot, t)
   const systemGroups = data.system
     .map(group => ({ group, servers: group.servers.filter(server => matches(server, filtered)) }))
@@ -251,6 +283,13 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         <div className="dsh-mcp-notice" data-kind={notice.kind}>
           <span className="dsh-mcp-notice-text">{notice.text}</span>
           <Button size="sm" variant="ghost" onClick={clearNotice}>{t('close')}</Button>
+        </div>
+      )}
+      {editError !== '' && (
+        <div className="dsh-mcp-warning">
+          <strong>{t('editLoadFailed')}</strong>
+          <span>{editError}</span>
+          <div><Button size="sm" variant="outline" onClick={() => { setEditError('') }}>{t('close')}</Button></div>
         </div>
       )}
       <div className="dsh-mcp-stats">
@@ -291,7 +330,9 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
                 <DshRow
                   key={entry.entryId}
                   entry={entry}
-                  busy={busy.includes(`unlink:${entry.entryId}`)}
+                  busy={busy.includes(`unlink:${entry.entryId}`) || busy.includes(`update:${entry.entryId}`)}
+                  loading={editLoadingId === entry.entryId}
+                  onEdit={entryToEdit => { void openEditor(entryToEdit) }}
                   onUnlink={setPendingUnlink}
                   t={t}
                 />
@@ -421,6 +462,16 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         )}
       </Modal>
 
+      {editing !== null && (
+        <EntryEditor
+          entry={editing}
+          busy={busy.includes(`update:${editing.entryId}`)}
+          t={t}
+          onClose={() => { setEditing(null) }}
+          onSave={saveEntry}
+        />
+      )}
+
       <Modal
         open={pendingUnlink !== null}
         onClose={() => { setPendingUnlink(null) }}
@@ -508,6 +559,8 @@ function noticeOf(
       return { kind: 'success', text: notice.restartRequired ? t('linkedRestartNotice') : t('linkedNotice') }
     case 'unlinked':
       return { kind: 'success', text: notice.restartRequired ? t('unlinkedRestartNotice') : t('unlinkedNotice') }
+    case 'updated':
+      return { kind: 'success', text: notice.restartRequired ? t('updatedRestartNotice') : t('updatedNotice') }
     case 'projects-saved':
       return { kind: 'success', text: t('projectSaved') }
     case 'error':

@@ -1,7 +1,7 @@
 /** 注册在 DSH 认证通道下的 HTTP 接口。 */
-import type { ErrorResponse, LinkRequest, ProjectsRequest, UnlinkRequest } from '../protocol.js'
+import type { ErrorResponse, LinkRequest, ProjectsRequest, UnlinkRequest, UpdateEntryRequest } from '../protocol.js'
 import { API_BASE } from '../protocol.js'
-import { ActionError, linkServer, saveProjectPaths, unlinkServer, type ActionContext } from './actions.js'
+import { ActionError, entryDetail, linkServer, saveProjectPaths, unlinkServer, updateEntry, type ActionContext } from './actions.js'
 import { scanAll, type LoaderLike, type ProfileLike } from './scan.js'
 import { readProjects } from './state.js'
 
@@ -66,6 +66,12 @@ export function registerRoutes(context: RoutesContext): void {
       requestBody: 'buffered',
       fetch: request => handle(context, request, projects),
     },
+    {
+      path: `${API_BASE}/entry`,
+      methods: ['GET', 'PUT'],
+      requestBody: 'buffered',
+      fetch: request => handle(context, request, entry),
+    },
   ]
   for (const route of routes) {
     context.effect(
@@ -113,6 +119,22 @@ async function unlink(context: RoutesContext, request: Request): Promise<Respons
   }
   const response = await unlinkServer(actionContext(context), body.entryId)
   context.log.info(`mcp_setting.unlink_completed: entry=${body.entryId} applied=${String(response.applied)}`)
+  return json(response)
+}
+
+async function entry(context: RoutesContext, request: Request): Promise<Response> {
+  if (request.method === 'GET') {
+    const entryId = new URL(request.url).searchParams.get('entryId') ?? ''
+    const response = await entryDetail(actionContext(context), entryId)
+    context.log.info(`mcp_setting.entry_read: entry=${entryId}`)
+    return json(response)
+  }
+  const body = await readJson<UpdateEntryRequest>(request)
+  if (typeof body.entryId !== 'string' || body.entryId === '') {
+    throw new ActionError(400, 'invalid-request', '缺少 entryId')
+  }
+  const response = await updateEntry(actionContext(context), body)
+  context.log.info(`mcp_setting.entry_updated: entry=${body.entryId} applied=${String(response.applied)}`)
   return json(response)
 }
 

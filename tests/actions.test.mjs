@@ -7,7 +7,7 @@ import { ActionError, createEntry, entryDetail, linkServer, unlinkServer, update
 import { scanAll } from '../lib/host/scan.js'
 
 async function fixture() {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-setting-actions-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-link-actions-'))
   const home = join(dir, 'home')
   const project = join(dir, 'project')
   const profile = join(home, 'profiles', 'test')

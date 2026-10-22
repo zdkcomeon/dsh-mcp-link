@@ -6,7 +6,7 @@ import test from 'node:test'
 import { scanAll, validateProjectPath } from '../lib/host/scan.js'
 
 test('scans a project config, redacts secrets, and matches a loaded DSH MCP', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-setting-scan-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-link-scan-'))
   const home = join(dir, 'home')
   const project = join(dir, 'project')
   const profile = join(home, 'profiles', 'test')
@@ -68,7 +68,7 @@ test('scans a project config, redacts secrets, and matches a loaded DSH MCP', as
 })
 
 test('marks a same-name different-connection DSH entry as a name conflict', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-setting-scan-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-link-scan-'))
   const home = join(dir, 'home')
   const project = join(dir, 'project')
   const profile = join(home, 'profiles', 'test')
@@ -118,7 +118,7 @@ test('rejects a missing project path', async () => {
 })
 
 test('resolves project workspace placeholders and keeps unresolved input variables blocked', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-setting-scan-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-link-scan-'))
   const home = join(dir, 'home')
   const project = join(dir, 'project')
   const profile = join(home, 'profiles', 'test')

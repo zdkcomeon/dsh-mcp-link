@@ -81,11 +81,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zdkcomeon/dsh-mcp-setting.git"
+    "url": "git+https://github.com/zdkcomeon/dsh-mcp-link.git"
   },
-  "homepage": "https://github.com/zdkcomeon/dsh-mcp-setting",
+  "homepage": "https://github.com/zdkcomeon/dsh-mcp-link",
   "bugs": {
-    "url": "https://github.com/zdkcomeon/dsh-mcp-setting/issues"
+    "url": "https://github.com/zdkcomeon/dsh-mcp-link/issues"
   },
   "keywords": [
     "dsh",

@@ -8,9 +8,9 @@ DSH 0.2+ · Node.js 22.19+ · MIT License
 
 [![npm version](https://img.shields.io/npm/v/dsh-mcp-link.svg)](https://www.npmjs.com/package/dsh-mcp-link)
 
-npm: [dsh-mcp-link](https://www.npmjs.com/package/dsh-mcp-link) · GitHub: [zdkcomeon/dsh-mcp-setting](https://github.com/zdkcomeon/dsh-mcp-setting)
+npm: [dsh-mcp-link](https://www.npmjs.com/package/dsh-mcp-link) · GitHub: [zdkcomeon/dsh-mcp-link](https://github.com/zdkcomeon/dsh-mcp-link)
 
-![MCP 链接主面板](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/01-overview.png)
+![MCP 链接主面板](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/01-overview.png)
 
 ## 目录
 
@@ -47,13 +47,13 @@ npm: [dsh-mcp-link](https://www.npmjs.com/package/dsh-mcp-link) · GitHub: [zdkc
 
 | 编辑 MCP | 新增 MCP |
 | --- | --- |
-| [![编辑 MCP](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/02-edit-mcp.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/02-edit-mcp.png) | [![新增 MCP](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/03-add-mcp.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/03-add-mcp.png) |
+| [![编辑 MCP](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/02-edit-mcp.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/02-edit-mcp.png) | [![新增 MCP](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/03-add-mcp.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/03-add-mcp.png) |
 
 ### JSON 导入与图形配置
 
 | JSON 导入 | 图形配置 |
 | --- | --- |
-| [![JSON 导入](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/04-json-import.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/04-json-import.png) | [![图形配置](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/05-gui-config.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-setting/main/docs/screenshots/05-gui-config.png) |
+| [![JSON 导入](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/04-json-import.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/04-json-import.png) | [![图形配置](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/05-gui-config.png)](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/05-gui-config.png) |
 
 ## 支持的来源
 
@@ -101,7 +101,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-mcp-link
 
 ```sh
 dsh plugin --profile desktop add dsh-mcp-link
-dsh plugin --profile desktop add github:zdkcomeon/dsh-mcp-setting
+dsh plugin --profile desktop add github:zdkcomeon/dsh-mcp-link
 ```
 
 从 Git 安装时由 `prepare` 执行构建。pnpm 默认会拦截依赖的构建脚本，需要先在 profile 的构建许可中允许 `dsh-mcp-link`。也可以先在本地构建，再通过本地路径安装：

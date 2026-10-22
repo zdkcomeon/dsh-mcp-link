@@ -16,7 +16,7 @@ import {
 } from '../lib/host/patch.js'
 
 test('appends and removes an MCP row while preserving comments and !!js expressions', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-setting-patch-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-link-patch-'))
   const file = join(dir, 'cordis.patch.yml')
   try {
     await writeFile(file, `# keep this comment
@@ -62,7 +62,7 @@ test('appends and removes an MCP row while preserving comments and !!js expressi
 })
 
 test('appends into an existing insert sequence', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-setting-patch-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-link-patch-'))
   const file = join(dir, 'cordis.patch.yml')
   try {
     await writeFile(file, `- insert:
@@ -89,7 +89,7 @@ test('appends into an existing insert sequence', async () => {
 })
 
 test('updates an MCP config while preserving unchanged !!js values', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-setting-patch-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-mcp-link-patch-'))
   const file = join(dir, 'cordis.patch.yml')
   try {
     await writeFile(file, `- insert:

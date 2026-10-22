@@ -1,10 +1,13 @@
 /** 接入与移除 MCP 的 Host 动作。 */
 import { join } from 'node:path'
 import type {
+  CreateEntryRequest,
+  CreateEntryResponse,
   EditableEntry,
   EditablePair,
   EditablePairInput,
   EntryDetailResponse,
+  EntrySettings,
   LinkResponse,
   UnlinkResponse,
   UpdateEntryRequest,
@@ -14,6 +17,7 @@ import {
   appendMcpRow,
   insertedRows,
   isExpressionValue,
+  patchIds,
   readProfilePatch,
   removeMcpRow,
   restoreProfilePatch,
@@ -21,6 +25,7 @@ import {
   saveProfilePatch,
   updateRowConfig,
   type InsertedRow,
+  type ProfilePatch,
 } from './patch.js'
 import { scanAll, sameConnection, validateProjectPath, type LoaderLike, type ProfileLike } from './scan.js'
 import { readProjects, writeProjects } from './state.js'
@@ -223,6 +228,41 @@ export async function entryDetail(context: ActionContext, entryId: string): Prom
   return { ok: true, entry }
 }
 
+/** 新增一条 MCP。 */
+export function createEntry(context: ActionContext, request: CreateEntryRequest): Promise<CreateEntryResponse> {
+  return withActionLock(() => createEntryUnlocked(context, request))
+}
+
+async function createEntryUnlocked(context: ActionContext, request: CreateEntryRequest): Promise<CreateEntryResponse> {
+  const patch = await readProfilePatch(context.profile.patchPath)
+  const next = buildNextConfig(context.loader, patch, request, undefined, {})
+  const serverName = asString(next.serverName) ?? ''
+  const usedIds = new Set([
+    ...patchIds(patch),
+    ...[...context.loader.entries()].flatMap(entry =>
+      typeof entry.options?.id === 'string' ? [entry.options.id] : []),
+  ])
+  const entryId = uniqueEntryId(`mcp-link-${sanitizeServerName(serverName)}`, usedIds)
+  appendMcpRow(patch, patchRowOf(entryId, next))
+  try {
+    await saveProfilePatch(patch)
+  } catch (error) {
+    await restoreProfilePatch(patch).catch(() => undefined)
+    throw new ActionError(500, 'write-failed', `写入 profile 配置失败：${errorMessage(error)}`)
+  }
+  if (!context.liveReload) {
+    return { ok: true, entryId, serverName, applied: false, restartRequired: true }
+  }
+  const applied = await waitFor(() => entryConfigured(context.loader, entryId, expectationOf(next)), 5000)
+  if (!applied && entryState(context.loader, entryId) === 3) {
+    const rollback = await readProfilePatch(context.profile.patchPath)
+    removeMcpRow(rollback, entryId)
+    await saveProfilePatch(rollback).catch(() => undefined)
+    throw new ActionError(500, 'startup-failed', '新增的 MCP 启动失败，已回滚配置；请检查命令和链接信息')
+  }
+  return { ok: true, entryId, serverName, applied, restartRequired: !applied }
+}
+
 /** 更新一条已接入 MCP 的连接信息。 */
 export function updateEntry(context: ActionContext, request: UpdateEntryRequest): Promise<UpdateEntryResponse> {
   return withActionLock(() => updateEntryUnlocked(context, request))
@@ -232,55 +272,13 @@ async function updateEntryUnlocked(context: ActionContext, request: UpdateEntryR
   if (typeof request.entryId !== 'string' || request.entryId.trim() === '') {
     throw new ActionError(400, 'invalid-request', '缺少 entryId')
   }
-  const serverName = typeof request.serverName === 'string' ? request.serverName.trim() : ''
-  if (!/^[A-Za-z0-9_-]{1,32}$/u.test(serverName)) {
-    throw new ActionError(400, 'invalid-name', '名称只能包含字母、数字、下划线和短横线，长度 1-32')
-  }
-  if (request.transport !== 'stdio' && request.transport !== 'streamable-http') {
-    throw new ActionError(400, 'invalid-transport', '传输方式必须是 stdio 或 streamable-http')
-  }
   const patch = await readProfilePatch(context.profile.patchPath)
   const row = insertedRows(patch).find(item => item.id === request.entryId)
   if (row === undefined) {
     throw new ActionError(409, 'not-editable', '这条 MCP 不是由当前 profile 的 patch 插入的，不能在这里编辑')
   }
   const previous = structuredClone(rowConfig(row))
-  const takenNames = namesOfOtherEntries(context.loader, patch, request.entryId)
-  if (takenNames.has(serverName)) {
-    throw new ActionError(409, 'name-conflict', `DSH 里已经有名为 ${serverName} 的 MCP`)
-  }
-  const next: Record<string, unknown> = { ...previous, serverName, transport: request.transport }
-  for (const key of ['command', 'args', 'env', 'cwd', 'url', 'headers', 'toolCallTimeoutMs']) delete next[key]
-  if (request.transport === 'stdio') {
-    const command = typeof request.command === 'string' ? request.command.trim() : ''
-    if (command === '') throw new ActionError(400, 'invalid-command', 'stdio MCP 需要 command')
-    next.command = command
-    if (request.args !== undefined) {
-      if (!Array.isArray(request.args) || request.args.some(item => typeof item !== 'string')) {
-        throw new ActionError(400, 'invalid-args', 'args 必须是字符串数组')
-      }
-      if (request.args.length > 0) next.args = [...request.args]
-    }
-    const env = mergePairs(previous.env, request.env, '环境变量')
-    if (Object.keys(env).length > 0) next.env = env
-    const cwd = typeof request.cwd === 'string' ? request.cwd.trim() : ''
-    if (cwd !== '') next.cwd = cwd
-  } else {
-    const url = typeof request.url === 'string' ? request.url.trim() : ''
-    assertHttpUrl(url)
-    next.url = url
-    const headers = mergePairs(previous.headers, request.headers, '请求头')
-    if (Object.keys(headers).length > 0) next.headers = headers
-  }
-  if (request.toolCallTimeoutMs !== undefined) {
-    if (!Number.isSafeInteger(request.toolCallTimeoutMs) || request.toolCallTimeoutMs <= 0) {
-      throw new ActionError(400, 'invalid-timeout', '超时必须是正整数毫秒值')
-    }
-    next.toolCallTimeoutMs = request.toolCallTimeoutMs
-  } else if (previous.toolCallTimeoutMs !== undefined && typeof previous.toolCallTimeoutMs !== 'number') {
-    // 表单不展示非数字表达式；未显式清空时原样保留。
-    next.toolCallTimeoutMs = previous.toolCallTimeoutMs
-  }
+  const next = buildNextConfig(context.loader, patch, request, request.entryId, previous)
   updateRowConfig(patch, row, next)
   try {
     await saveProfilePatch(patch)
@@ -291,16 +289,7 @@ async function updateEntryUnlocked(context: ActionContext, request: UpdateEntryR
   if (!context.liveReload) {
     return { ok: true, applied: false, restartRequired: true }
   }
-  const expectation: EntryExpectation = {
-    serverName,
-    transport: request.transport,
-    ...(typeof next.command === 'string' ? { command: next.command } : {}),
-    ...(Array.isArray(next.args) && next.args.every(item => typeof item === 'string') ? { args: next.args } : {}),
-    ...(typeof next.url === 'string' ? { url: next.url } : {}),
-    ...(isRecord(next.env) ? { env: asStringRecord(next.env) ?? {} } : {}),
-    ...(isRecord(next.headers) ? { headers: asStringRecord(next.headers) ?? {} } : {}),
-  }
-  const applied = await waitFor(() => entryConfigured(context.loader, request.entryId, expectation), 5000)
+  const applied = await waitFor(() => entryConfigured(context.loader, request.entryId, expectationOf(next)), 5000)
   if (!applied && entryState(context.loader, request.entryId) === 3) {
     const rollback = await readProfilePatch(context.profile.patchPath)
     const rollbackRow = insertedRows(rollback).find(item => item.id === request.entryId)
@@ -311,6 +300,95 @@ async function updateEntryUnlocked(context: ActionContext, request: UpdateEntryR
     throw new ActionError(500, 'startup-failed', '编辑后的 MCP 启动失败，已回滚配置；请检查命令和链接信息')
   }
   return { ok: true, applied, restartRequired: !applied }
+}
+
+function buildNextConfig(
+  loader: LoaderLike,
+  patch: ProfilePatch,
+  input: EntrySettings,
+  excludeEntryId: string | undefined,
+  previous: Record<string, unknown>,
+): Record<string, unknown> {
+  const serverName = typeof input.serverName === 'string' ? input.serverName.trim() : ''
+  if (!/^[A-Za-z0-9_-]{1,32}$/u.test(serverName)) {
+    throw new ActionError(400, 'invalid-name', '名称只能包含字母、数字、下划线和短横线，长度 1-32')
+  }
+  if (input.transport !== 'stdio' && input.transport !== 'streamable-http') {
+    throw new ActionError(400, 'invalid-transport', '传输方式必须是 stdio 或 streamable-http')
+  }
+  const takenNames = namesOfOtherEntries(loader, patch, excludeEntryId)
+  if (takenNames.has(serverName)) {
+    throw new ActionError(409, 'name-conflict', `DSH 里已经有名为 ${serverName} 的 MCP`)
+  }
+  const next: Record<string, unknown> = { ...previous, serverName, transport: input.transport }
+  for (const key of ['command', 'args', 'env', 'cwd', 'url', 'headers', 'toolCallTimeoutMs']) delete next[key]
+  if (input.transport === 'stdio') {
+    const command = typeof input.command === 'string' ? input.command.trim() : ''
+    if (command === '') throw new ActionError(400, 'invalid-command', 'stdio MCP 需要 command')
+    next.command = command
+    if (input.args !== undefined) {
+      if (!Array.isArray(input.args) || input.args.some(item => typeof item !== 'string')) {
+        throw new ActionError(400, 'invalid-args', 'args 必须是字符串数组')
+      }
+      if (input.args.length > 0) next.args = [...input.args]
+    }
+    const env = mergePairs(previous.env, input.env, '环境变量')
+    if (Object.keys(env).length > 0) next.env = env
+    const cwd = typeof input.cwd === 'string' ? input.cwd.trim() : ''
+    if (cwd !== '') next.cwd = cwd
+  } else {
+    const url = typeof input.url === 'string' ? input.url.trim() : ''
+    assertHttpUrl(url)
+    next.url = url
+    const headers = mergePairs(previous.headers, input.headers, '请求头')
+    if (Object.keys(headers).length > 0) next.headers = headers
+  }
+  if (input.toolCallTimeoutMs !== undefined) {
+    if (!Number.isSafeInteger(input.toolCallTimeoutMs) || input.toolCallTimeoutMs <= 0) {
+      throw new ActionError(400, 'invalid-timeout', '超时必须是正整数毫秒值')
+    }
+    next.toolCallTimeoutMs = input.toolCallTimeoutMs
+  } else if (previous.toolCallTimeoutMs !== undefined && typeof previous.toolCallTimeoutMs !== 'number') {
+    // 表单不展示非数字表达式；未显式清空时原样保留。
+    next.toolCallTimeoutMs = previous.toolCallTimeoutMs
+  }
+  return next
+}
+
+function expectationOf(config: Record<string, unknown>): EntryExpectation {
+  return {
+    serverName: asString(config.serverName) ?? '',
+    transport: asString(config.transport) ?? '',
+    ...(typeof config.command === 'string' ? { command: config.command } : {}),
+    ...(Array.isArray(config.args) && config.args.every(item => typeof item === 'string') ? { args: config.args } : {}),
+    ...(typeof config.url === 'string' ? { url: config.url } : {}),
+    ...(isRecord(config.env) ? { env: asStringRecord(config.env) ?? {} } : {}),
+    ...(isRecord(config.headers) ? { headers: asStringRecord(config.headers) ?? {} } : {}),
+  }
+}
+
+function patchRowOf(id: string, config: Record<string, unknown>): PatchRow {
+  const transport = config.transport === 'streamable-http' ? 'streamable-http' : 'stdio'
+  const serverName = asString(config.serverName) ?? id
+  const command = asString(config.command)
+  const args = asStringArray(config.args)
+  const env = asStringRecord(config.env)
+  const cwd = asString(config.cwd)
+  const url = asString(config.url)
+  const headers = asStringRecord(config.headers)
+  const timeout = typeof config.toolCallTimeoutMs === 'number' ? config.toolCallTimeoutMs : undefined
+  return {
+    id,
+    serverName,
+    transport,
+    ...(command === undefined ? {} : { command }),
+    ...(args === undefined ? {} : { args }),
+    ...(env === undefined ? {} : { env }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(url === undefined ? {} : { url }),
+    ...(headers === undefined ? {} : { headers }),
+    ...(timeout === undefined ? {} : { toolCallTimeoutMs: timeout }),
+  }
 }
 
 function pairsOf(value: unknown, row: InsertedRow, section: 'env' | 'headers'): EditablePair[] {
@@ -370,19 +448,19 @@ function transportOfConfig(config: Record<string, unknown>): 'stdio' | 'streamab
 
 function namesOfOtherEntries(
   loader: LoaderLike,
-  patch: Awaited<ReturnType<typeof readProfilePatch>>,
-  entryId: string,
+  patch: ProfilePatch,
+  entryId: string | undefined,
 ): Set<string> {
   const names = new Set<string>()
   for (const entry of loader.entries()) {
-    if (entry.options?.id === entryId) continue
+    if (entryId !== undefined && entry.options?.id === entryId) continue
     if (!isMcpModule(entry.options?.name)) continue
     const config = isRecord(entry.options?.config) ? entry.options.config : {}
     const name = asString(config.serverName)
     if (name !== undefined) names.add(name)
   }
   for (const item of insertedRows(patch)) {
-    if (item.id === entryId) continue
+    if (entryId !== undefined && item.id === entryId) continue
     const name = asString(rowConfig(item).serverName)
     if (name !== undefined) names.add(name)
   }

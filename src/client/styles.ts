@@ -164,6 +164,37 @@ export const STYLE_TEXT = `
 .dsh-mcp-project-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .dsh-mcp-project-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .dsh-mcp-project-name { font-weight: 500; }
+.dsh-mcp-section-actions { display: flex; align-items: center; gap: 10px; }
+.dsh-mcp-add-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.dsh-mcp-add-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-settings-card-fill);
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.dsh-mcp-add-choice:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dsh-mcp-add-choice-title { font-size: 14px; font-weight: 600; }
+.dsh-mcp-add-choice-desc { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.dsh-mcp-json-input { min-height: 160px; }
+.dsh-mcp-import-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-skeleton);
+}
+@media (max-width: 640px) {
+  .dsh-mcp-add-choices { grid-template-columns: 1fr; }
+}
 .dsh-mcp-editor-content { max-height: min(68vh, 620px); overflow-y: auto; }
 .dsh-mcp-editor { display: flex; flex-direction: column; gap: 14px; }
 .dsh-mcp-field { display: flex; flex-direction: column; gap: 6px; }

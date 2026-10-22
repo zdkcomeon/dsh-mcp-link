@@ -2,9 +2,10 @@
 import { useEffect, useState } from 'react'
 import { Button, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import type { DshMcpEntry, EditableEntry, McpSourceGroup, PublicMcpServer, UpdateEntryRequest } from '../protocol.js'
+import type { CreateEntryRequest, DshMcpEntry, EditableEntry, EntrySettings, McpSourceGroup, PublicMcpServer } from '../protocol.js'
 import type { McpSettingsInjected, McpSnapshot, WorkspaceOption } from './controller.js'
 import { EntryEditor } from './EntryEditor.js'
+import { JsonImportDialog } from './JsonImportDialog.js'
 import { NS } from './locales.js'
 import { WorkspaceSelect } from './WorkspaceSelect.js'
 
@@ -180,10 +181,18 @@ function DshRow(props: {
   )
 }
 
+const BLANK_ENTRY: EditableEntry = {
+  entryId: '',
+  serverName: '',
+  transport: 'stdio',
+  env: [],
+  headers: [],
+}
+
 /** 页面主体。 */
 export function McpSettingsSection(props: McpSettingsSectionProps) {
   const {
-    t, useMcpSettings, refresh, clearNotice, link, unlink, loadEntry, updateEntry,
+    t, useMcpSettings, refresh, clearNotice, link, unlink, loadEntry, updateEntry, createEntry,
     setProjectSelected, clearProjects, addProject,
   } = props
   const snapshot: McpSnapshot = useMcpSettings(value => value)
@@ -195,6 +204,8 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   const [editing, setEditing] = useState<EditableEntry | null>(null)
   const [editLoadingId, setEditLoadingId] = useState<string | null>(null)
   const [editError, setEditError] = useState('')
+  const [addOpen, setAddOpen] = useState(false)
+  const [addMode, setAddMode] = useState<'choose' | 'json' | 'gui'>('choose')
   // 只在挂载时读取一次；不要把注入面函数的身份放进依赖，否则父级重建注入面时会反复触发刷新。
   useEffect(() => { refresh() }, [])
 
@@ -266,9 +277,24 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
       setEditLoadingId(null)
     }
   }
-  const saveEntry = async (request: UpdateEntryRequest): Promise<boolean> => {
-    const ok = await updateEntry(request)
+  const saveEntry = async (settings: EntrySettings): Promise<boolean> => {
+    if (editing === null) return false
+    const ok = await updateEntry({ ...settings, entryId: editing.entryId })
     if (ok) setEditing(null)
+    return ok
+  }
+  const closeAdd = () => {
+    setAddOpen(false)
+    setAddMode('choose')
+  }
+  const saveNewEntry = async (settings: EntrySettings): Promise<boolean> => {
+    const ok = await createEntry(settings)
+    if (ok) closeAdd()
+    return ok
+  }
+  const importEntry = async (request: CreateEntryRequest): Promise<boolean> => {
+    const ok = await createEntry(request)
+    if (ok) closeAdd()
     return ok
   }
   const notice = noticeOf(snapshot, t)
@@ -320,7 +346,12 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
       <section className="dsh-mcp-section">
         <div className="dsh-mcp-section-head">
           <h2 className="dsh-mcp-section-title">{t('dshSection')}</h2>
-          <span className="dsh-mcp-section-count">{data.dsh.length} {t('servers')}</span>
+          <div className="dsh-mcp-section-actions">
+            <Button size="sm" variant="primary" onClick={() => { setAddMode('choose'); setAddOpen(true) }}>
+              {t('addMcp')}
+            </Button>
+            <span className="dsh-mcp-section-count">{data.dsh.length} {t('servers')}</span>
+          </div>
         </div>
         {data.dsh.length === 0
           ? <div className="dsh-mcp-empty">{t('dshEmpty')}</div>
@@ -462,6 +493,45 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         )}
       </Modal>
 
+      <Modal
+        open={addOpen && addMode === 'choose'}
+        onClose={closeAdd}
+        title={t('addMcpTitle')}
+        closeLabel={t('close')}
+        description={t('addMcpDescription')}
+      >
+        <div className="dsh-mcp-add-choices">
+          <button type="button" className="dsh-mcp-add-choice" onClick={() => { setAddMode('json') }}>
+            <span className="dsh-mcp-add-choice-title">{t('importJson')}</span>
+            <span className="dsh-mcp-add-choice-desc">{t('importJsonDesc')}</span>
+          </button>
+          <button type="button" className="dsh-mcp-add-choice" onClick={() => { setAddMode('gui') }}>
+            <span className="dsh-mcp-add-choice-title">{t('guiConfig')}</span>
+            <span className="dsh-mcp-add-choice-desc">{t('guiConfigDesc')}</span>
+          </button>
+        </div>
+      </Modal>
+
+      {addOpen && addMode === 'json' && (
+        <JsonImportDialog
+          busy={busy.includes('create')}
+          t={t}
+          onClose={closeAdd}
+          onImport={importEntry}
+        />
+      )}
+
+      {addOpen && addMode === 'gui' && (
+        <EntryEditor
+          entry={BLANK_ENTRY}
+          mode="create"
+          busy={busy.includes('create')}
+          t={t}
+          onClose={closeAdd}
+          onSave={saveNewEntry}
+        />
+      )}
+
       {editing !== null && (
         <EntryEditor
           entry={editing}
@@ -561,6 +631,8 @@ function noticeOf(
       return { kind: 'success', text: notice.restartRequired ? t('unlinkedRestartNotice') : t('unlinkedNotice') }
     case 'updated':
       return { kind: 'success', text: notice.restartRequired ? t('updatedRestartNotice') : t('updatedNotice') }
+    case 'created':
+      return { kind: 'success', text: notice.restartRequired ? t('createdRestartNotice') : t('createdNotice') }
     case 'projects-saved':
       return { kind: 'success', text: t('projectSaved') }
     case 'error':

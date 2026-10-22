@@ -1,6 +1,8 @@
 /** 设置页的数据读取与动作控制器。 */
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
+  CreateEntryRequest,
+  CreateEntryResponse,
   EditableEntry,
   EntryDetailResponse,
   ErrorResponse,
@@ -23,6 +25,7 @@ export type McpNotice =
   | { readonly kind: 'linked'; readonly restartRequired: boolean }
   | { readonly kind: 'unlinked'; readonly restartRequired: boolean }
   | { readonly kind: 'updated'; readonly restartRequired: boolean }
+  | { readonly kind: 'created'; readonly restartRequired: boolean }
   | { readonly kind: 'projects-saved' }
   | { readonly kind: 'error'; readonly message: string }
 
@@ -63,6 +66,8 @@ export interface McpSettingsInjected {
   loadEntry: (entryId: string) => Promise<EditableEntry>
   /** 保存一条已接入 MCP 的配置。 */
   updateEntry: (request: UpdateEntryRequest) => Promise<boolean>
+  /** 新增一条 MCP。 */
+  createEntry: (request: CreateEntryRequest) => Promise<boolean>
   /** 勾选或取消一个工作区/自定义路径。 */
   setProjectSelected: (path: string, selected: boolean) => Promise<boolean>
   /** 清空所有已选路径。 */
@@ -179,6 +184,26 @@ export class McpSettingsController {
     return response.entry
   }
 
+  /** 新增一条 MCP。 */
+  async createEntry(request: CreateEntryRequest): Promise<boolean> {
+    this.patch(current => ({ ...current, busy: addBusy(current.busy, 'create') }))
+    try {
+      const body = request
+      const result = await apiRequest<CreateEntryResponse>('/entry', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      this.setNotice({ kind: 'created', restartRequired: result.restartRequired })
+      await this.refresh()
+      return true
+    } catch (error) {
+      this.setNotice({ kind: 'error', message: messageOf(error) })
+      return false
+    } finally {
+      this.patch(current => ({ ...current, busy: removeBusy(current.busy, 'create') }))
+    }
+  }
+
   /** 保存一条已接入 MCP 的配置。 */
   async updateEntry(request: UpdateEntryRequest): Promise<boolean> {
     const busyKey = `update:${request.entryId}`
@@ -255,6 +280,7 @@ export class McpSettingsController {
       unlink: entryId => this.unlink(entryId),
       loadEntry: entryId => this.loadEntry(entryId),
       updateEntry: request => this.updateEntry(request),
+      createEntry: request => this.createEntry(request),
       setProjectSelected: (path, selected) => this.setProjectSelected(path, selected),
       clearProjects: () => this.clearProjects(),
       addProject: path => this.addProject(path),

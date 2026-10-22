@@ -258,6 +258,7 @@ export function configOf(row: PatchRow): Record<string, unknown> {
     if (row.url !== undefined) config.url = row.url
     if (row.headers !== undefined) config.headers = { ...row.headers }
   }
+  if (row.toolCallTimeoutMs !== undefined) config.toolCallTimeoutMs = row.toolCallTimeoutMs
   return config
 }
 

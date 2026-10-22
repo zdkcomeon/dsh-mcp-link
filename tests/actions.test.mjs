@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { ActionError, entryDetail, linkServer, unlinkServer, updateEntry } from '../lib/host/actions.js'
+import { ActionError, createEntry, entryDetail, linkServer, unlinkServer, updateEntry } from '../lib/host/actions.js'
 import { scanAll } from '../lib/host/scan.js'
 
 async function fixture() {
@@ -237,6 +237,83 @@ test('refuses to rename an MCP onto another DSH server name', async () => {
       }),
       error => error instanceof ActionError && error.code === 'name-conflict',
     )
+  } finally {
+    await rm(f.dir, { recursive: true, force: true })
+  }
+})
+
+test('creates a new stdio MCP with env and timeout', async () => {
+  const f = await fixture()
+  try {
+    const patchPath = f.patchPath
+    const context = {
+      loader: { entries: () => [] },
+      profile: { name: 'test', patchPath, home: f.home, cwd: f.project },
+      liveReload: false,
+      configProjects: [],
+    }
+    const created = await createEntry(context, {
+      serverName: 'new-mcp',
+      transport: 'stdio',
+      command: 'node',
+      args: ['server.js'],
+      cwd: '/tmp/new-mcp',
+      env: [
+        { key: 'TOKEN', value: 'secret' },
+        { key: 'PLAIN', value: 'value' },
+      ],
+      headers: [],
+      toolCallTimeoutMs: 30000,
+    })
+    assert.equal(created.entryId, 'mcp-link-new-mcp')
+    assert.equal(created.restartRequired, true)
+    const text = await readFile(patchPath, 'utf8')
+    assert.match(text, /mcp-link-new-mcp/u)
+    assert.match(text, /serverName: new-mcp/u)
+    assert.match(text, /TOKEN: secret/u)
+    assert.match(text, /toolCallTimeoutMs: 30000/u)
+    const detail = await entryDetail(context, created.entryId)
+    assert.equal(detail.entry.serverName, 'new-mcp')
+    assert.equal(detail.entry.env.find(pair => pair.key === 'TOKEN')?.secret, true)
+    assert.equal(detail.entry.env.find(pair => pair.key === 'TOKEN')?.value, undefined)
+    assert.equal(detail.entry.env.find(pair => pair.key === 'PLAIN')?.value, 'value')
+  } finally {
+    await rm(f.dir, { recursive: true, force: true })
+  }
+})
+
+test('creates a new HTTP MCP and refuses a duplicate name', async () => {
+  const f = await fixture()
+  try {
+    const patchPath = f.patchPath
+    const context = {
+      loader: { entries: () => [] },
+      profile: { name: 'test', patchPath, home: f.home, cwd: f.project },
+      liveReload: false,
+      configProjects: [],
+    }
+    const created = await createEntry(context, {
+      serverName: 'new-http',
+      transport: 'streamable-http',
+      url: 'https://example.com/mcp',
+      env: [],
+      headers: [{ key: 'Authorization', value: 'Bearer secret' }],
+    })
+    const text = await readFile(patchPath, 'utf8')
+    assert.match(text, /transport: streamable-http/u)
+    assert.match(text, /url: https:\/\/example\.com\/mcp/u)
+    assert.match(text, /Authorization: Bearer secret/u)
+    await assert.rejects(
+      () => createEntry(context, {
+        serverName: 'new-http',
+        transport: 'streamable-http',
+        url: 'https://example.com/other',
+        env: [],
+        headers: [],
+      }),
+      error => error instanceof ActionError && error.code === 'name-conflict',
+    )
+    assert.equal(created.applied, false)
   } finally {
     await rm(f.dir, { recursive: true, force: true })
   }

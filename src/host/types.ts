@@ -68,4 +68,5 @@ export interface PatchRow {
   readonly cwd?: string
   readonly url?: string
   readonly headers?: Readonly<Record<string, string>>
+  readonly toolCallTimeoutMs?: number
 }

@@ -1,7 +1,7 @@
 /** 注册在 DSH 认证通道下的 HTTP 接口。 */
-import type { ErrorResponse, LinkRequest, ProjectsRequest, UnlinkRequest, UpdateEntryRequest } from '../protocol.js'
+import type { CreateEntryRequest, ErrorResponse, LinkRequest, ProjectsRequest, UnlinkRequest, UpdateEntryRequest } from '../protocol.js'
 import { API_BASE } from '../protocol.js'
-import { ActionError, entryDetail, linkServer, saveProjectPaths, unlinkServer, updateEntry, type ActionContext } from './actions.js'
+import { ActionError, createEntry, entryDetail, linkServer, saveProjectPaths, unlinkServer, updateEntry, type ActionContext } from './actions.js'
 import { scanAll, type LoaderLike, type ProfileLike } from './scan.js'
 import { readProjects } from './state.js'
 
@@ -68,7 +68,7 @@ export function registerRoutes(context: RoutesContext): void {
     },
     {
       path: `${API_BASE}/entry`,
-      methods: ['GET', 'PUT'],
+      methods: ['GET', 'PUT', 'POST'],
       requestBody: 'buffered',
       fetch: request => handle(context, request, entry),
     },
@@ -127,6 +127,12 @@ async function entry(context: RoutesContext, request: Request): Promise<Response
     const entryId = new URL(request.url).searchParams.get('entryId') ?? ''
     const response = await entryDetail(actionContext(context), entryId)
     context.log.info(`mcp_setting.entry_read: entry=${entryId}`)
+    return json(response)
+  }
+  if (request.method === 'POST') {
+    const body = await readJson<CreateEntryRequest>(request)
+    const response = await createEntry(actionContext(context), body)
+    context.log.info(`mcp_setting.entry_created: entry=${response.entryId} applied=${String(response.applied)}`)
     return json(response)
   }
   const body = await readJson<UpdateEntryRequest>(request)

@@ -107,9 +107,8 @@ export interface EditablePairInput {
   readonly value?: string
 }
 
-/** 更新一条已接入 MCP 的配置。 */
-export interface UpdateEntryRequest {
-  readonly entryId: string
+/** 新增或编辑 MCP 时提交的连接设置。 */
+export interface EntrySettings {
   readonly serverName: string
   readonly transport: 'stdio' | 'streamable-http'
   readonly command?: string
@@ -119,6 +118,23 @@ export interface UpdateEntryRequest {
   readonly url?: string
   readonly headers: readonly EditablePairInput[]
   readonly toolCallTimeoutMs?: number
+}
+
+/** 新增一条 MCP。 */
+export interface CreateEntryRequest extends EntrySettings {}
+
+/** 新增结果。 */
+export interface CreateEntryResponse {
+  readonly ok: true
+  readonly entryId: string
+  readonly serverName: string
+  readonly applied: boolean
+  readonly restartRequired: boolean
+}
+
+/** 更新一条已接入 MCP 的配置。 */
+export interface UpdateEntryRequest extends EntrySettings {
+  readonly entryId: string
 }
 
 /** 更新结果。 */

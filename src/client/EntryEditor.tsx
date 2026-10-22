@@ -1,7 +1,7 @@
 /** 编辑一条已接入 DSH 的 MCP 连接配置。 */
 import { useState } from 'react'
 import { Button, Input, Modal, SegmentedControl, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { EditableEntry, EditablePair, EditablePairInput, UpdateEntryRequest } from '../protocol.js'
+import type { EditableEntry, EditablePair, EditablePairInput, EntrySettings } from '../protocol.js'
 import type { McpSettingsSectionProps } from './Section.js'
 
 /** 编辑弹窗的 props。 */
@@ -9,8 +9,10 @@ export interface EntryEditorProps {
   readonly entry: EditableEntry
   readonly busy: boolean
   readonly t: McpSettingsSectionProps['t']
+  /** create 使用空条目；edit 使用当前条目。 */
+  readonly mode?: 'create' | 'edit'
   readonly onClose: () => void
-  readonly onSave: (request: UpdateEntryRequest) => Promise<boolean>
+  readonly onSave: (settings: EntrySettings) => Promise<boolean>
 }
 
 interface PairDraft {
@@ -62,7 +64,8 @@ function looksSecret(key: string): boolean {
  * @returns 编辑弹窗。
  */
 export function EntryEditor(props: EntryEditorProps) {
-  const { entry, busy, t, onClose, onSave } = props
+  const { entry, busy, t, mode = 'edit', onClose, onSave } = props
+  const creating = mode === 'create'
   const [serverName, setServerName] = useState(entry.serverName)
   const [transport, setTransport] = useState<'stdio' | 'streamable-http'>(entry.transport)
   const [command, setCommand] = useState(entry.command ?? '')
@@ -120,8 +123,7 @@ export function EntryEditor(props: EntryEditorProps) {
         && (pair.secret || looksSecret(key)) && pair.value === ''
       return keep ? { key } : { key, value: pair.value }
     })
-    const request: UpdateEntryRequest = {
-      entryId: entry.entryId,
+    const settings: EntrySettings = {
       serverName: serverName.trim(),
       transport,
       env: pairInput(env),
@@ -135,7 +137,7 @@ export function EntryEditor(props: EntryEditorProps) {
         : { url: url.trim() }),
       ...(timeout === undefined ? {} : { toolCallTimeoutMs: timeout }),
     }
-    const ok = await onSave(request)
+    const ok = await onSave(settings)
     if (!ok) setError(t('error'))
   }
 
@@ -143,15 +145,15 @@ export function EntryEditor(props: EntryEditorProps) {
     <Modal
       open
       onClose={onClose}
-      title={t('editTitle')}
+      title={creating ? t('addMcpTitle') : t('editTitle')}
       closeLabel={t('close')}
-      description={t('editDescription')}
+      description={creating ? t('addMcpDescription') : t('editDescription')}
       contentClassName="dsh-mcp-editor-content"
       footer={(
         <div className="dsh-mcp-dialog-actions">
           <Button size="md" variant="outline" onClick={onClose}>{t('cancel')}</Button>
           <Button size="md" variant="primary" disabled={busy} onClick={() => { void submit() }}>
-            {busy ? t('saving') : t('save')}
+            {busy ? t('saving') : creating ? t('create') : t('save')}
           </Button>
         </div>
       )}

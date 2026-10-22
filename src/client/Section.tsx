@@ -1,5 +1,5 @@
 /** MCP 链接设置页。 */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import { Button, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CreateEntryRequest, DshMcpEntry, EditableEntry, EntrySettings, McpSourceGroup, PublicMcpServer } from '../protocol.js'
@@ -188,6 +188,39 @@ const BLANK_ENTRY: EditableEntry = {
   headers: [],
 }
 
+/** 导航栏选中来源后的 MCP 列表。 */
+function SourcePanel(props: {
+  readonly group: McpSourceGroup
+  readonly busy: readonly string[]
+  readonly onLink: (server: PublicMcpServer) => void
+  readonly t: McpSettingsSectionProps['t']
+}) {
+  const { group, busy, onLink, t } = props
+  return (
+    <div className="dsh-mcp-source-panel">
+      <div className="dsh-mcp-source-panel-head">
+        <span className="dsh-mcp-source-path" title={group.path}>{group.path}</span>
+        <Tag tone="quiet">{group.scope === 'project' ? t('project') : t('source')}</Tag>
+      </div>
+      {group.error !== undefined && <div className="dsh-mcp-row dsh-mcp-warning">{group.error}</div>}
+      {group.servers.map(server => (
+        <ServerRow
+          key={server.key}
+          server={server}
+          busy={busy.includes(`link:${server.key}`)}
+          onLink={onLink}
+          t={t}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** 来源在列表里的稳定 key。 */
+function sourceKeyOf(group: McpSourceGroup): string {
+  return `${group.sourceId}\u0000${group.path}`
+}
+
 /** 页面主体。 */
 export function McpSettingsSection(props: McpSettingsSectionProps) {
   const {
@@ -205,6 +238,7 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   const [editError, setEditError] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [addMode, setAddMode] = useState<'choose' | 'json' | 'gui'>('choose')
+  const [activeSourceKey, setActiveSourceKey] = useState<string | null>(null)
   // 只在挂载时读取一次；不要把注入面函数的身份放进依赖，否则父级重建注入面时会反复触发刷新。
   useEffect(() => { refresh() }, [])
 
@@ -300,6 +334,23 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   const systemGroups = data.system
     .map(group => ({ group, servers: group.servers.filter(server => matches(server, filtered)) }))
     .filter(item => item.servers.length > 0 || (filtered === '' && item.group.error !== undefined))
+  const foundSourceIndex = activeSourceKey === null
+    ? 0
+    : systemGroups.findIndex(item => sourceKeyOf(item.group) === activeSourceKey)
+  const activeSourceIndex = Math.max(0, foundSourceIndex)
+  const activeSource = systemGroups[activeSourceIndex]
+  const onSourceTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    event.preventDefault()
+    if (systemGroups.length === 0) return
+    const delta = event.key === 'ArrowRight' ? 1 : -1
+    const nextIndex = (index + delta + systemGroups.length) % systemGroups.length
+    const next = systemGroups[nextIndex]
+    if (next === undefined) return
+    setActiveSourceKey(sourceKeyOf(next.group))
+    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    tabs?.[nextIndex]?.focus()
+  }
 
   return (
     <section className="dsh-mcp-page" aria-label={t('nav')}>
@@ -379,17 +430,48 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         {systemGroups.length === 0
           ? <div className="dsh-mcp-empty">{filtered === '' ? t('systemEmpty') : t('noMatches')}</div>
           : (
-            <div className="dsh-mcp-card">
-              {systemGroups.map(item => (
-                <SourceGroup
-                  key={item.group.sourceId + item.group.path}
-                  group={{ ...item.group, servers: item.servers }}
-                  filter={filtered}
-                  busy={busy}
-                  onLink={openLink}
-                  t={t}
-                />
-              ))}
+            <div className="dsh-mcp-source-browser">
+              <div className="dsh-mcp-source-tabs" role="tablist" aria-label={t('systemSection')}>
+                {systemGroups.map((item, index) => {
+                  const selected = index === activeSourceIndex
+                  return (
+                    <button
+                      key={sourceKeyOf(item.group)}
+                      id={`mcp-system-tab-${String(index)}`}
+                      type="button"
+                      role="tab"
+                      className="dsh-mcp-source-tab"
+                      data-active={selected || undefined}
+                      aria-selected={selected}
+                      aria-controls="mcp-system-panel"
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => { setActiveSourceKey(sourceKeyOf(item.group)) }}
+                      onKeyDown={event => { onSourceTabKeyDown(event, index) }}
+                    >
+                      <span>{item.group.label}</span>
+                      <span className="dsh-mcp-source-tab-count">{item.servers.length}</span>
+                      {item.servers.some(server => server.linkedEntryId !== undefined)
+                        ? <span className="dsh-mcp-source-tab-linked" role="img" aria-label={t('linked')} />
+                        : null}
+                    </button>
+                  )
+                })}
+              </div>
+              {activeSource !== undefined && (
+                <div
+                  className="dsh-mcp-card"
+                  id="mcp-system-panel"
+                  role="tabpanel"
+                  aria-labelledby={`mcp-system-tab-${String(activeSourceIndex)}`}
+                >
+                  <SourcePanel
+                    group={{ ...activeSource.group, servers: activeSource.servers }}
+                    busy={busy}
+                    onLink={openLink}
+                    t={t}
+                  />
+                </div>
+              )}
             </div>
           )}
       </section>

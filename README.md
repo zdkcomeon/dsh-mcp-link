@@ -5,7 +5,7 @@
 ## 功能
 
 - **已接入 DSH**：读取当前 profile 的 Loader，列出所有已加载的 `@deepseek-ai/dsh-mcp-client` 条目。
-- **系统已有 MCP**：扫描常见客户端配置文件，按来源分组展示 MCP 服务。
+- **系统已有 MCP**：扫描常见客户端配置文件，按来源显示顶部标签页；点击 Cursor、Codex CLI、Gemini CLI 等应用名切换，下方只展示当前来源的 MCP 服务。
 - **项目 MCP**：直接从 DSH 左侧的工作区列表多选工作区，扫描其中的 `.mcp.json`、`.cursor/mcp.json`、`.vscode/mcp.json` 等文件；也支持添加不在工作区列表里的自定义路径。
 - **已链接识别**：按传输方式、命令参数或 URL 判断系统 MCP 是否已经接入 DSH；已经接入的会显示「已链接」。
 - **一键接入**：把选中的 MCP 配置写入当前 profile 的 `cordis.patch.yml`，由 DSH 的 HMR 立即加载。
@@ -57,7 +57,7 @@ dsh plugin --profile web add github:<owner>/<repo>
 ## 使用
 
 1. 点击左侧导航里的 **MCP 链接**，或打开 **设置 → MCP 链接**；两个入口展示同一份内容。
-2. 在「系统已有 MCP」里找到要接入的服务，点击「接入 DSH」。
+2. 在「系统已有 MCP」顶部的来源标签里选择 Cursor、Codex CLI、Gemini CLI 等，再点击对应服务的「接入 DSH」。
 3. 确认 DSH 服务名后点击「接入」。
 4. 已接入的服务会出现在「已接入 DSH」，新的 MCP 工具在新会话里可用。
 5. 点击「已接入 DSH」右上角的「新增 MCP」，可以选择 JSON 导入或图形配置。JSON 支持单个服务对象、只含一个条目的 `mcpServers` 映射，或 DSH `mcp-client` 配置。

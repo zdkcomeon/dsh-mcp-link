@@ -147,7 +147,7 @@ export function EntryEditor(props: EntryEditorProps) {
       onClose={onClose}
       title={creating ? t('addMcpTitle') : t('editTitle')}
       closeLabel={t('close')}
-      description={creating ? t('addMcpDescription') : t('editDescription')}
+      description={creating ? t('createDescription') : t('editDescription')}
       contentClassName="dsh-mcp-editor-content"
       footer={(
         <div className="dsh-mcp-dialog-actions">

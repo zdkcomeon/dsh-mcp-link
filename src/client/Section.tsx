@@ -2,8 +2,9 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import { Button, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import type { CreateEntryRequest, DshMcpEntry, EditableEntry, EntrySettings, McpSourceGroup, PublicMcpServer } from '../protocol.js'
-import type { McpSettingsInjected, McpSnapshot, WorkspaceOption } from './controller.js'
+import type { CreateEntryRequest, DshMcpEntry, EditableEntry, EntrySettings, McpSourceGroup, PublicMcpServer, TestConnectionResult, TestFailureCode } from '../protocol.js'
+import type { McpSettingsInjected, McpSnapshot, McpTestState, McpTestTarget, WorkspaceOption } from './controller.js'
+import { testKeyOf } from './controller.js'
 import { EntryEditor } from './EntryEditor.js'
 import { JsonImportDialog } from './JsonImportDialog.js'
 import { NS } from './locales.js'
@@ -14,16 +15,26 @@ export type McpSettingsSectionProps =
   PropsLocale<typeof NS>
   & InjectFace<McpSettingsInjected>
 
+/** 测试失败后等待用户确认的重连。 */
+interface PendingReconnect {
+  readonly entry: DshMcpEntry
+  readonly result: TestConnectionResult
+}
+
 /** 单个 MCP 服务行。 */
 function ServerRow(props: {
   readonly server: PublicMcpServer
   readonly busy: boolean
+  readonly testState: McpTestState | undefined
   readonly onLink: (server: PublicMcpServer) => void
+  readonly onTest: (target: McpTestTarget) => void
   readonly t: McpSettingsSectionProps['t']
 }) {
-  const { server, busy, onLink, t } = props
+  const { server, busy, testState, onLink, onTest, t } = props
   const linked = server.linkedEntryId !== undefined
   const blocked = server.unsupported !== undefined || server.disabled === true
+  const testing = testState?.phase === 'running'
+  const testable = server.unsupported === undefined && transportReady(server)
   const tags = (
     <div className="dsh-mcp-row-title">
       <span className="dsh-mcp-name">{server.name}</span>
@@ -68,8 +79,20 @@ function ServerRow(props: {
             {server.unsupported}
           </div>
         )}
+        <TestResultView state={testState} t={t} />
       </div>
       <div className="dsh-mcp-row-actions">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={testing || !testable}
+          title={testable
+            ? t('testHint')
+            : (server.unsupported ?? (server.disabled === true ? t('disabled') : t('testUnavailable')))}
+          onClick={() => { onTest({ kind: 'source', key: server.key }) }}
+        >
+          {testing ? t('testing') : t('testConnection')}
+        </Button>
         {linked ? null : (
           <Button
             size="sm"
@@ -91,10 +114,12 @@ function SourceGroup(props: {
   readonly group: McpSourceGroup
   readonly filter: string
   readonly busy: readonly string[]
+  readonly tests: Readonly<Record<string, McpTestState>>
   readonly onLink: (server: PublicMcpServer) => void
+  readonly onTest: (target: McpTestTarget) => void
   readonly t: McpSettingsSectionProps['t']
 }) {
-  const { group, filter, busy, onLink, t } = props
+  const { group, filter, busy, tests, onLink, onTest, t } = props
   const servers = group.servers.filter(server => matches(server, filter))
   if (servers.length === 0 && group.error === undefined) return null
   return (
@@ -112,7 +137,9 @@ function SourceGroup(props: {
           key={server.key}
           server={server}
           busy={busy.includes(`link:${server.key}`)}
+          testState={tests[testKeyOf({ kind: 'source', key: server.key })]}
           onLink={onLink}
+          onTest={onTest}
           t={t}
         />
       ))}
@@ -125,14 +152,20 @@ function DshRow(props: {
   readonly entry: DshMcpEntry
   readonly busy: boolean
   readonly loading: boolean
+  readonly testState: McpTestState | undefined
+  readonly reconnectBusy: boolean
   readonly onEdit: (entry: DshMcpEntry) => void
   readonly onUnlink: (entry: DshMcpEntry) => void
+  readonly onTest: (entry: DshMcpEntry) => void
+  readonly onReconnect: (entry: DshMcpEntry) => void
   readonly t: McpSettingsSectionProps['t']
 }) {
-  const { entry, busy, loading, onEdit, onUnlink, t } = props
+  const { entry, busy, loading, testState, reconnectBusy, onEdit, onUnlink, onTest, onReconnect, t } = props
   const source = entry.source === 'profile'
     ? t('fromProfile')
     : entry.source === 'home' ? t('fromHome') : t('fromBundle')
+  const testing = testState?.phase === 'running'
+  const testable = entry.transport === 'stdio' || entry.transport === 'streamable-http'
   return (
     <div className="dsh-mcp-row">
       <div className="dsh-mcp-row-main">
@@ -154,8 +187,23 @@ function DshRow(props: {
           {entry.envKeys.length > 0 && <span>{t('env')}: {entry.envKeys.join(', ')}</span>}
           {entry.headerKeys.length > 0 && <span>{t('headers')}: {entry.headerKeys.join(', ')}</span>}
         </div>
+        <TestResultView
+          state={testState}
+          t={t}
+          onReconnect={entry.enabled ? () => { onReconnect(entry) } : undefined}
+          reconnectBusy={reconnectBusy}
+        />
       </div>
       <div className="dsh-mcp-row-actions">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={testing || busy || !testable}
+          title={testable ? t('testHint') : t('testUnavailable')}
+          onClick={() => { onTest(entry) }}
+        >
+          {testing ? t('testing') : t('testConnection')}
+        </Button>
         {entry.editable && (
           <Button
             size="sm"
@@ -192,10 +240,12 @@ const BLANK_ENTRY: EditableEntry = {
 function SourcePanel(props: {
   readonly group: McpSourceGroup
   readonly busy: readonly string[]
+  readonly tests: Readonly<Record<string, McpTestState>>
   readonly onLink: (server: PublicMcpServer) => void
+  readonly onTest: (target: McpTestTarget) => void
   readonly t: McpSettingsSectionProps['t']
 }) {
-  const { group, busy, onLink, t } = props
+  const { group, busy, tests, onLink, onTest, t } = props
   return (
     <div className="dsh-mcp-source-panel">
       <div className="dsh-mcp-source-panel-head">
@@ -208,7 +258,9 @@ function SourcePanel(props: {
           key={server.key}
           server={server}
           busy={busy.includes(`link:${server.key}`)}
+          testState={tests[testKeyOf({ kind: 'source', key: server.key })]}
           onLink={onLink}
+          onTest={onTest}
           t={t}
         />
       ))}
@@ -224,7 +276,7 @@ function sourceKeyOf(group: McpSourceGroup): string {
 /** 页面主体。 */
 export function McpSettingsSection(props: McpSettingsSectionProps) {
   const {
-    t, useMcpSettings, refresh, clearNotice, link, unlink, loadEntry, updateEntry, createEntry,
+    t, useMcpSettings, refresh, clearNotice, link, unlink, test, reconnect, loadEntry, updateEntry, createEntry,
     setProjectSelected, clearProjects, addProject,
   } = props
   const snapshot: McpSnapshot = useMcpSettings(value => value)
@@ -233,6 +285,7 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   const [pendingName, setPendingName] = useState('')
   const [linkError, setLinkError] = useState('')
   const [pendingUnlink, setPendingUnlink] = useState<DshMcpEntry | null>(null)
+  const [pendingReconnect, setPendingReconnect] = useState<PendingReconnect | null>(null)
   const [editing, setEditing] = useState<EditableEntry | null>(null)
   const [editLoadingId, setEditLoadingId] = useState<string | null>(null)
   const [editError, setEditError] = useState('')
@@ -244,7 +297,22 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
 
   const data = snapshot.data
   const busy = snapshot.busy
+  const tests = snapshot.tests
   const filtered = filter.trim().toLowerCase()
+  const runTest = (target: McpTestTarget) => { void test(target) }
+  const runDshTest = async (entry: DshMcpEntry) => {
+    const result = await test({ kind: 'dsh', entryId: entry.entryId })
+    if (entry.enabled && result !== undefined && !result.connected && shouldOfferReconnect(result)) {
+      setPendingReconnect({ entry, result })
+    }
+  }
+  const runReconnect = (entry: DshMcpEntry) => { void reconnect(entry.entryId) }
+  const confirmReconnect = async () => {
+    const pending = pendingReconnect
+    if (pending === null) return
+    await reconnect(pending.entry.entryId)
+    setPendingReconnect(null)
+  }
   if (snapshot.status === 'loading' && data === undefined) {
     return (
       <section className="dsh-mcp-page" aria-label={t('nav')}>
@@ -331,6 +399,7 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
     return ok
   }
   const notice = noticeOf(snapshot, t)
+  const reconnectBusy = pendingReconnect !== null && busy.includes(`reconnect:${pendingReconnect.entry.entryId}`)
   const systemGroups = data.system
     .map(group => ({ group, servers: group.servers.filter(server => matches(server, filtered)) }))
     .filter(item => item.servers.length > 0 || (filtered === '' && item.group.error !== undefined))
@@ -377,6 +446,7 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
           {data.profile.name} · {data.profile.reload === 'live' ? t('reloadLive') : t('reloadRestart')}
         </span>
       </div>
+      <div className="dsh-mcp-hint">{t('testHint')}</div>
       {data.warnings.length > 0 && (
         <details className="dsh-mcp-warning">
           <summary>{t('warnings')} ({data.warnings.length})</summary>
@@ -411,10 +481,16 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
                 <DshRow
                   key={entry.entryId}
                   entry={entry}
-                  busy={busy.includes(`unlink:${entry.entryId}`) || busy.includes(`update:${entry.entryId}`)}
+                  busy={busy.includes(`unlink:${entry.entryId}`)
+                    || busy.includes(`update:${entry.entryId}`)
+                    || busy.includes(`reconnect:${entry.entryId}`)}
                   loading={editLoadingId === entry.entryId}
+                  testState={tests[testKeyOf({ kind: 'dsh', entryId: entry.entryId })]}
+                  reconnectBusy={busy.includes(`reconnect:${entry.entryId}`)}
                   onEdit={entryToEdit => { void openEditor(entryToEdit) }}
                   onUnlink={setPendingUnlink}
+                  onTest={entryToTest => { void runDshTest(entryToTest) }}
+                  onReconnect={runReconnect}
                   t={t}
                 />
               ))}
@@ -467,7 +543,9 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
                   <SourcePanel
                     group={{ ...activeSource.group, servers: activeSource.servers }}
                     busy={busy}
+                    tests={tests}
                     onLink={openLink}
+                    onTest={runTest}
                     t={t}
                   />
                 </div>
@@ -520,7 +598,9 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
                         group={group}
                         filter={filtered}
                         busy={busy}
+                        tests={tests}
                         onLink={openLink}
+                        onTest={runTest}
                         t={t}
                       />
                     ))}
@@ -624,6 +704,45 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
       )}
 
       <Modal
+        open={pendingReconnect !== null}
+        onClose={() => { if (!reconnectBusy) setPendingReconnect(null) }}
+        title={t('reconnectDialogTitle')}
+        closeLabel={t('close')}
+        description={t('reconnectDialogDescription')}
+        footer={(
+          <div className="dsh-mcp-dialog-actions">
+            <Button
+              size="md"
+              variant="outline"
+              disabled={reconnectBusy}
+              onClick={() => { setPendingReconnect(null) }}
+            >
+              {t('cancel')}
+            </Button>
+            <Button
+              size="md"
+              variant="primary"
+              disabled={reconnectBusy}
+              onClick={() => { void confirmReconnect() }}
+            >
+              {reconnectBusy ? t('reconnecting') : t('reconnect')}
+            </Button>
+          </div>
+        )}
+      >
+        {pendingReconnect !== null && (
+          <div className="dsh-mcp-dialog-body">
+            <div className="dsh-mcp-dialog-summary">
+              <span className="dsh-mcp-name">{pendingReconnect.entry.serverName}</span>
+              <span className="dsh-mcp-code">{pendingReconnect.entry.entryId}</span>
+            </div>
+            <TestResultView state={{ phase: 'done', result: pendingReconnect.result }} t={t} />
+            <span className="dsh-mcp-dialog-hint">{t('reconnectDialogHint')}</span>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
         open={pendingUnlink !== null}
         onClose={() => { setPendingUnlink(null) }}
         title={t('unlinkDialogTitle')}
@@ -663,6 +782,124 @@ export function McpSettingsPanel(props: McpSettingsSectionProps) {
       <McpSettingsSection {...props} />
     </div>
   )
+}
+
+/** 一行连接测试的结果。 */
+function TestResultView(props: {
+  readonly state: McpTestState | undefined
+  readonly t: McpSettingsSectionProps['t']
+  readonly onReconnect?: (() => void) | undefined
+  readonly reconnectBusy?: boolean
+}) {
+  const { state, t, onReconnect, reconnectBusy } = props
+  if (state === undefined || state.phase === 'running') return null
+  if (state.phase === 'error') {
+    return (
+      <div className="dsh-mcp-test" data-state="failed" role="status">
+        <Tag tone="danger">{t('testFailed')}</Tag>
+        <span>{state.message}</span>
+      </div>
+    )
+  }
+  const result = state.result
+  if (!result.connected) {
+    const detail = result.error?.detail ?? result.error?.message
+    return (
+      <div className="dsh-mcp-test" data-state="failed" role="status">
+        <Tag tone="danger">{t('testFailed')}</Tag>
+        <span>{testReason(result.error?.code, t)}</span>
+        {detail !== undefined && detail !== '' ? <span className="dsh-mcp-test-detail">{detail}</span> : null}
+      </div>
+    )
+  }
+  const toolTitle = result.toolNames !== undefined && result.toolNames.length > 0
+    ? result.toolNames.join(', ')
+    : undefined
+  const serverInfo = result.serverInfo
+  const serverLabel = serverInfo === undefined || serverInfo.name === undefined
+    ? undefined
+    : serverInfo.version === undefined ? serverInfo.name : `${serverInfo.name} ${serverInfo.version}`
+  return (
+    <div className="dsh-mcp-test" data-state="ok" role="status">
+      <Tag tone="success">{t('testSucceeded')}</Tag>
+      <span>{t('testDuration', { ms: result.durationMs })}</span>
+      {result.protocolVersion !== undefined && (
+        <span>{t('testProtocol', { version: result.protocolVersion })}</span>
+      )}
+      {result.toolCount !== undefined && (
+        <span title={toolTitle}>
+          {result.toolCount === 1 ? t('testToolCountOne') : t('testToolsCount', { count: result.toolCount })}
+        </span>
+      )}
+      {serverLabel !== undefined && <span className="dsh-mcp-test-detail">{serverLabel}</span>}
+      {result.warning !== undefined && <span className="dsh-mcp-test-detail">{result.warning}</span>}
+      {onReconnect !== undefined && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={reconnectBusy === true}
+          title={t('reconnectHint')}
+          onClick={onReconnect}
+        >
+          {reconnectBusy === true ? t('reconnecting') : t('reconnect')}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/** 这些失败和连接状态有关，重连有机会恢复；配置类错误不提示重连。 */
+const RECONNECTABLE_FAILURES: ReadonlySet<TestFailureCode> = new Set([
+  'network',
+  'timeout',
+  'closed',
+  'exited',
+  'http-status',
+  'rpc-error',
+])
+
+function shouldOfferReconnect(result: TestConnectionResult): boolean {
+  const code = result.error?.code
+  return code !== undefined && RECONNECTABLE_FAILURES.has(code)
+}
+
+function testReason(
+  code: TestFailureCode | undefined,
+  t: McpSettingsSectionProps['t'],
+): string {
+  switch (code) {
+    case 'spawn-failed':
+      return t('testReasonSpawn')
+    case 'exited':
+      return t('testReasonExited')
+    case 'timeout':
+      return t('testReasonTimeout')
+    case 'network':
+      return t('testReasonNetwork')
+    case 'http-status':
+      return t('testReasonHttp')
+    case 'protocol':
+      return t('testReasonProtocol')
+    case 'rpc-error':
+      return t('testReasonRpc')
+    case 'unresolved':
+      return t('testReasonUnresolved')
+    case 'missing-command':
+    case 'missing-url':
+      return t('testReasonMissing')
+    case 'unsupported':
+      return t('testReasonUnsupported')
+    case 'closed':
+      return t('testReasonClosed')
+    default:
+      return t('testReasonUnknown')
+  }
+}
+
+function transportReady(value: { readonly transport: string; readonly command?: string; readonly url?: string }): boolean {
+  if (value.transport === 'stdio') return value.command !== undefined
+  if (value.transport === 'streamable-http') return value.url !== undefined
+  return false
 }
 
 function Header(props: {
@@ -725,6 +962,13 @@ function noticeOf(
       return { kind: 'success', text: notice.restartRequired ? t('createdRestartNotice') : t('createdNotice') }
     case 'projects-saved':
       return { kind: 'success', text: t('projectSaved') }
+    case 'reconnected':
+      return {
+        kind: notice.connected ? 'success' : 'error',
+        text: notice.message ?? (notice.connected ? t('reconnectSucceeded') : t('reconnectStillFailed')),
+      }
+    case 'reconnect-failed':
+      return { kind: 'error', text: `${t('reconnectError')}: ${notice.message}` }
     case 'error':
       return { kind: 'error', text: `${t('error')}: ${notice.message}` }
     default:

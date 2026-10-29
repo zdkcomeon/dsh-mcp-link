@@ -182,6 +182,26 @@ export const STYLE_TEXT = `
   font-size: 12px;
 }
 .dsh-mcp-row-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.dsh-mcp-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.dsh-mcp-test[data-state='ok'] { color: var(--dsw-alias-label-secondary); }
+.dsh-mcp-test[data-state='failed'] { color: var(--dsw-alias-state-error-primary); }
+.dsh-mcp-test-detail {
+  font-family: var(--dsw-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 96px;
+  overflow-y: auto;
+}
 .dsh-mcp-code {
   font-family: var(--dsw-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 12px;

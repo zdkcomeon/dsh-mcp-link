@@ -10,7 +10,11 @@ import type {
   LinkResponse,
   ProjectsRequest,
   ProjectsResponse,
+  ReconnectRequest,
+  ReconnectResponse,
   ScanResponse,
+  TestConnectionRequest,
+  TestConnectionResult,
   UnlinkRequest,
   UnlinkResponse,
   UpdateEntryRequest,
@@ -27,6 +31,8 @@ export type McpNotice =
   | { readonly kind: 'updated'; readonly restartRequired: boolean }
   | { readonly kind: 'created'; readonly restartRequired: boolean }
   | { readonly kind: 'projects-saved' }
+  | { readonly kind: 'reconnected'; readonly connected: boolean; readonly message?: string }
+  | { readonly kind: 'reconnect-failed'; readonly message: string }
   | { readonly kind: 'error'; readonly message: string }
 
 /** 下拉列表中的一项工作区或自定义项目。 */
@@ -39,6 +45,22 @@ export interface WorkspaceOption {
   readonly custom: boolean
 }
 
+/** 连接测试目标：DSH 已加载的条目，或扫描到的系统/项目服务。 */
+export type McpTestTarget =
+  | { readonly kind: 'dsh'; readonly entryId: string }
+  | { readonly kind: 'source'; readonly key: string }
+
+/** 一次连接测试在页面里的状态。 */
+export type McpTestState =
+  | { readonly phase: 'running' }
+  | { readonly phase: 'done'; readonly result: TestConnectionResult }
+  | { readonly phase: 'error'; readonly message: string }
+
+/** 测试结果在快照里的稳定键。 */
+export function testKeyOf(target: McpTestTarget): string {
+  return target.kind === 'dsh' ? `dsh:${target.entryId}` : `source:${target.key}`
+}
+
 /** 页面快照。 */
 export interface McpSnapshot {
   readonly status: 'loading' | 'ready' | 'error'
@@ -47,6 +69,8 @@ export interface McpSnapshot {
   /** 正在执行的操作键。 */
   readonly busy: readonly string[]
   readonly notice?: McpNotice
+  /** 每个目标最近一次连接测试的状态。 */
+  readonly tests: Readonly<Record<string, McpTestState>>
   /** 工作区列表加手动添加的路径。 */
   readonly workspaces: readonly WorkspaceOption[]
   /** 工作区列表的加载状态。 */
@@ -62,6 +86,10 @@ export interface McpSettingsInjected {
   clearNotice: () => void
   link: (key: string, serverName: string) => Promise<boolean>
   unlink: (entryId: string) => Promise<boolean>
+  /** 测试一条 MCP 的连接，结果写入快照；请求失败时返回 undefined。 */
+  test: (target: McpTestTarget) => Promise<TestConnectionResult | undefined>
+  /** 重新加载一条已接入 MCP 的 mcp-client 条目。 */
+  reconnect: (entryId: string) => Promise<boolean>
   /** 读取一条已接入 MCP 的可编辑配置。 */
   loadEntry: (entryId: string) => Promise<EditableEntry>
   /** 保存一条已接入 MCP 的配置。 */
@@ -79,6 +107,7 @@ export interface McpSettingsInjected {
 const INITIAL: McpSnapshot = {
   status: 'loading',
   busy: [],
+  tests: {},
   workspaces: [],
   workspaceState: 'loading',
 }
@@ -147,6 +176,7 @@ export class McpSettingsController {
         body: JSON.stringify(body),
       })
       this.setNotice({ kind: 'linked', restartRequired: result.restartRequired })
+      this.clearTest(`dsh:${result.entryId}`)
       await this.refresh()
       return true
     } catch (error) {
@@ -168,8 +198,74 @@ export class McpSettingsController {
         body: JSON.stringify(body),
       })
       this.setNotice({ kind: 'unlinked', restartRequired: result.restartRequired })
+      this.clearTest(`dsh:${entryId}`)
       await this.refresh()
       return true
+    } catch (error) {
+      this.setNotice({ kind: 'error', message: messageOf(error) })
+      return false
+    } finally {
+      this.patch(current => ({ ...current, busy: removeBusy(current.busy, busyKey) }))
+    }
+  }
+
+  /** 测试一条 MCP 的连接；结果只更新这一行的状态，不弹全局提示。 */
+  async test(target: McpTestTarget): Promise<TestConnectionResult | undefined> {
+    const key = testKeyOf(target)
+    if (this.store.getSnapshot().tests[key]?.phase === 'running') return undefined
+    this.patch(current => ({
+      ...current,
+      tests: { ...current.tests, [key]: { phase: 'running' } },
+    }))
+    try {
+      const body: TestConnectionRequest = target.kind === 'dsh'
+        ? { entryId: target.entryId }
+        : { key: target.key }
+      const result = await apiRequest<TestConnectionResult>('/test', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      this.patch(current => ({
+        ...current,
+        tests: { ...current.tests, [key]: { phase: 'done', result } },
+      }))
+      return result
+    } catch (error) {
+      this.patch(current => ({
+        ...current,
+        tests: { ...current.tests, [key]: { phase: 'error', message: messageOf(error) } },
+      }))
+      return undefined
+    }
+  }
+
+  /** 重新加载一条已接入 MCP 的 mcp-client 条目，并用测试结果刷新这一行。 */
+  async reconnect(entryId: string): Promise<boolean> {
+    const busyKey = `reconnect:${entryId}`
+    this.patch(current => ({ ...current, busy: addBusy(current.busy, busyKey) }))
+    try {
+      const body: ReconnectRequest = { entryId }
+      const result = await apiRequest<ReconnectResponse>('/reconnect', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      const test = result.test
+      if (test !== undefined) {
+        this.patch(current => ({
+          ...current,
+          tests: { ...current.tests, [`dsh:${entryId}`]: { phase: 'done', result: test } },
+        }))
+      }
+      if (!result.reloaded) {
+        this.setNotice({ kind: 'reconnect-failed', message: result.error?.message ?? 'reconnect failed' })
+      } else {
+        this.setNotice({
+          kind: 'reconnected',
+          connected: test?.connected === true,
+          ...(result.error === undefined ? {} : { message: result.error.message }),
+        })
+      }
+      return result.reloaded
     } catch (error) {
       this.setNotice({ kind: 'error', message: messageOf(error) })
       return false
@@ -215,6 +311,7 @@ export class McpSettingsController {
         body: JSON.stringify(body),
       })
       this.setNotice({ kind: 'updated', restartRequired: result.restartRequired })
+      this.clearTest(`dsh:${request.entryId}`)
       await this.refresh()
       return true
     } catch (error) {
@@ -278,6 +375,8 @@ export class McpSettingsController {
       clearNotice: () => { this.setNotice(undefined) },
       link: (key, serverName) => this.link(key, serverName),
       unlink: entryId => this.unlink(entryId),
+      test: target => this.test(target),
+      reconnect: entryId => this.reconnect(entryId),
       loadEntry: entryId => this.loadEntry(entryId),
       updateEntry: request => this.updateEntry(request),
       createEntry: request => this.createEntry(request),
@@ -334,6 +433,16 @@ export class McpSettingsController {
   private patch(update: (current: McpSnapshot) => McpSnapshot): void {
     if (this.disposed) return
     this.store.set(update(this.store.getSnapshot()))
+  }
+
+  /** 丢弃某个目标上一次的测试结果，避免修改配置后展示过期状态。 */
+  private clearTest(key: string): void {
+    this.patch(current => {
+      if (!Object.hasOwn(current.tests, key)) return current
+      const tests = { ...current.tests }
+      delete tests[key]
+      return { ...current, tests }
+    })
   }
 
   private setNotice(notice: McpNotice | undefined): void {

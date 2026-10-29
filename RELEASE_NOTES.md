@@ -1,3 +1,64 @@
+# dsh-mcp-link 0.1.1 发版说明
+
+- 发布日期：2026-10-29
+- 版本：0.1.1
+- 仓库：https://github.com/zdkcomeon/dsh-mcp-link
+- npm：https://www.npmjs.com/package/dsh-mcp-link
+
+## 版本概述
+
+`dsh-mcp-link` 0.1.1 增加连接测试和失败重连，用于排查并恢复 MCP 使用一段时间后断开、连不上或配置写错的情况。
+
+## 主要变化
+
+- `已接入 DSH`、系统 MCP、项目 MCP 的每一行新增 `测试连接` 按钮。
+- 测试会按当前配置新开一次 MCP 握手，支持 `stdio` 和 `streamable-http`。
+- 成功时显示耗时、协议版本、服务名称和版本、工具数量。
+- 失败时区分命令无法启动、进程提前退出、握手超时、网络错误、HTTP 状态错误、协议错误和 JSON-RPC 错误，并显示诊断信息。
+- 配置里包含只有 Loader 能求值的 `!!js` 表达式时，测试会直接说明无法独立求值。
+- 测试失败且属于连接类问题时弹出确认框，可以直接重连。
+- 测试成功的结果行也提供 `重连`，用于测试通过但工具调用仍提示 `server is disconnected` 的情况。
+- 重连会原地重载 mcp-client fiber，使用 `fiber.update(config, true)` 跳过配置写回；完成后自动再做一次连接测试。
+- 新增 `mcp_link_reconnect` Agent 工具，支持用 `serverName` 或 `entryId` 重连。
+- 测试和重连接口只接受标识，命令、URL、环境变量和请求头都从 Host 侧配置读取。
+- 新增 `POST /api/mcp-setting/reconnect`。
+
+## 兼容性
+
+- DSH `0.2.0-rc.2` 及以上；Host 侧握手和接口已在 DSH `0.2.1-rc.3` 环境中验证。
+- 构建需要 Node.js `22.19` 及以上。
+- 已有的 profile patch、系统配置和项目配置不需要迁移；升级只替换插件 bundle。
+
+## 安装与升级
+
+```sh
+dsh plugin --profile desktop add /absolute/path/to/dsh-mcp-link
+```
+
+Web profile 使用 `--profile web`。新增 bundle 后重启 DSH；只修改 `lib/client.js` 时刷新页面即可。
+
+## 已知限制
+
+- 连接测试会新开一个 stdio 子进程或 HTTP 会话，不复用 DSH 当前的长连接。测试通过只说明服务当前可以建立新连接。
+- 只能单实例运行的服务可能在测试时多启动一个实例，或因为端口和文件锁而失败。
+- 连接测试的总超时为 20 秒；依赖 `npx` 冷启动的服务可能超时，可以稍后重试。
+- 重连最多等待 20 秒让 mcp-client 完成重启；超时后仍可能在后台继续重试。
+- 只有已经在 DSH 中运行的 mcp-client 条目可以重连，已禁用的条目需要先启用。
+- 服务本身不可达时，重连会完成重载但连接测试仍然失败；服务恢复后由 mcp-client 自己的重连策略继续尝试。
+- 仍不支持 SSE 传输、MCP OAuth 和凭据交互。
+
+## 验证
+
+- `pnpm verify` 通过，50 个测试全部通过。
+- 覆盖 stdio 握手、Streamable HTTP 的 JSON 与 SSE 响应、工具列表分页、超时、命令不存在、进程提前退出、HTTP 错误、JSON-RPC 错误、`!!js` 表达式、fiber 重载、Agent 工具、`/api/mcp-setting/test` 和 `/api/mcp-setting/reconnect`。
+- 用本机的 codegraph stdio 服务和 IntelliJ IDEA streamable-http 服务验证了真实握手、协议协商和工具列表读取。
+- 在 desktop profile 中以 `link:` 方式安装 0.1.1 后，通过认证后的 `/api/mcp-setting/test` 对 codegraph 和 idea 各做了一次真实测试，两者均返回连接成功。
+- 通过认证后的 `/api/mcp-setting/reconnect` 重连 codegraph，重载耗时 484ms，重连后测试成功并返回 1 个工具。
+- 通过 `mcp_link_reconnect` 工具重连 idea，返回 `Reconnected idea, protocol 2025-11-25, 66 tools.`，重连后 IDE 工具仍可用。
+- 两次重连后 `cordis.patch.yml` 和 `cordis.yml` 的哈希、大小和修改时间都没有变化，两个 MCP 条目仍为启用状态。
+
+---
+
 # dsh-mcp-link 0.1.0 发版说明
 
 - 发布日期：2026-10-22

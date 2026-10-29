@@ -183,6 +183,16 @@ export function isExpressionValue(row: InsertedRow, section: 'env' | 'headers', 
 }
 
 /**
+ * 判断配置里指定的字段是否包含 `!!js` 表达式。
+ * YAML 解析后表达式会变成普通字符串，只能从节点标签上识别。
+ */
+export function rowConfigHasExpression(row: InsertedRow, keys: readonly string[]): boolean {
+  const config = row.map.get('config')
+  if (!isMap(config)) return false
+  return keys.some(key => nodeHasExpression(nodeOf(config, key)))
+}
+
+/**
  * 更新一条 inserted MCP 行的配置，同时保留未变化值的 YAML 节点（包括 `!!js` 标签）。
  * @param patch - 待修改的 profile patch。
  * @param row - 目标 inserted 行。
@@ -228,6 +238,13 @@ function updateStringMap(current: YAMLMap, next: Record<string, unknown>, docume
 
 function nodeOf(map: YAMLMap, key: string): unknown {
   return map.items.find(pair => String(pair.key) === key)?.value
+}
+
+function nodeHasExpression(node: unknown): boolean {
+  if (isScalar(node)) return node.tag === JS_TAG
+  if (isMap(node)) return node.items.some(pair => nodeHasExpression(pair.value))
+  if (isSeq(node)) return node.items.some(nodeHasExpression)
+  return false
 }
 
 function samePlain(node: unknown, value: unknown): boolean {

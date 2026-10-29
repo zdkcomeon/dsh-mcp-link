@@ -4,11 +4,13 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { ActionContext } from './host/actions.js'
 import { registerRoutes } from './host/routes.js'
 import type { LoaderLike, ProfileLike } from './host/scan.js'
+import { createReconnectTool, type ToolsLike } from './host/tool.js'
 
 export const name = 'dsh-mcp-link'
-export const inject = ['connection', 'loader']
+export const inject = ['connection', 'loader', 'tools']
 
 /** 插件配置。 */
 export interface Config {
@@ -64,5 +66,19 @@ export function apply(ctx: Context, config: Config): void {
     },
     effect: (register, label) => { ctx.effect(register, label) },
   })
+  const actionContext = (): ActionContext => ({
+    loader,
+    profile,
+    liveReload: ctx.get('hmr') !== undefined,
+    configProjects: config.projects,
+  })
+  const tools = ctx.get('tools') as ToolsLike | undefined
+  if (tools === undefined) {
+    ctx.logger.warn('mcp_setting.tools_missing: reconnect tool was not registered')
+  } else {
+    const tool = createReconnectTool(actionContext)
+    ctx.effect(() => tools.register(tool), 'dsh-mcp-link: reconnect tool')
+    ctx.logger.info(`mcp_setting.reconnect_tool_ready: tool=${tool.name}`)
+  }
   ctx.logger.info(`mcp_setting.ready: profile=${profile.name} patch=${profile.patchPath}`)
 }

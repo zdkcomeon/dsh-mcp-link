@@ -33,6 +33,9 @@ npm: [dsh-mcp-link](https://www.npmjs.com/package/dsh-mcp-link) · GitHub: [zdkc
 - **系统配置扫描**：读取 Cursor、Claude Code、Codex CLI、Gemini CLI、VS Code 等客户端的 MCP 配置。
 - **来源导航**：系统 MCP 按来源显示为顶部标签页，点击应用名称切换，下方只展示当前来源的服务。
 - **已链接识别**：根据传输方式、命令参数或 URL 判断服务是否已经接入 DSH，并在列表中显示 `已链接`。
+- **测试连接**：对已接入或扫描到的 MCP 新开一次握手，显示耗时、协议版本、服务信息和工具数量；失败时显示原因和诊断信息。
+- **失败重连**：测试失败时弹框询问是否重连；重连原地重载 mcp-client，完成后自动再测试一次。
+- **重连工具**：提供 `mcp_link_reconnect`，Agent 可以根据错误信息直接重连 MCP。
 - **一键接入**：把选中的配置写入当前 profile 的 `cordis.patch.yml`，由 DSH Loader 加载。
 - **项目 MCP**：从 DSH 左侧工作区列表多选工作区，扫描项目内的 `.mcp.json`、`.cursor/mcp.json`、`.vscode/mcp.json` 等文件；也支持添加自定义路径。
 - **新增 MCP**：支持粘贴 JSON 导入，或在图形表单中填写连接信息。
@@ -149,6 +152,28 @@ pnpm build
 
 项目来源中的 workspace 占位符会自动替换为项目路径。其他 `${...}` 占位符需要先在源配置中补全。
 
+### 测试连接
+
+`已接入 DSH`、系统 MCP 和项目 MCP 的每一行都有 `测试连接` 按钮。
+
+1. 点击后，Host 会按这条配置新开一个 stdio 子进程或 Streamable HTTP 会话，完成 `initialize` 握手；服务声明 tools 能力时再读取一次 `tools/list`。
+2. 成功时该行显示耗时、协商出的协议版本、服务名称和版本、工具数量；鼠标悬停在工具数量上可以看到部分工具名。
+3. 失败时显示失败原因和诊断信息，例如命令不存在、进程提前退出、握手超时、HTTP 状态码或 JSON-RPC 错误。
+
+测试使用本机当前的配置和环境变量，但不会复用 DSH 已经建立的长连接。测试通过说明服务本身可以连上；如果工具调用仍然提示 `server is disconnected`，说明 DSH 侧的连接已经失效，可以重连这条 MCP。
+
+### 重连 MCP
+
+测试失败时，如果失败原因和连接状态有关，页面会弹出确认框询问是否重连。重连会重新加载对应的 mcp-client 条目，等待重启完成后自动再测试一次。
+
+- 网络不可达、握手超时、HTTP 状态错误、进程提前退出和 JSON-RPC 错误会提示重连。
+- 命令不存在、URL 缺失、包含未求值表达式或传输方式不支持属于配置问题，重载后仍然存在，因此不提示重连。
+- 重连只重载 mcp-client，不写入 profile patch，也不修改已保存的配置。
+- 测试成功时，结果行里也有 `重连` 操作；测试通过但工具调用仍提示断开时可以直接使用。
+- 重连后仍然失败时，行内会显示最新结果，并在顶部显示失败原因。
+
+Agent 可以直接调用 `mcp_link_reconnect` 工具重连：传错误信息里的 `serverName`（例如 `idea`），或传 MCP 链接里显示的 `entryId`（例如 `mcp-idea`）。工具和页面按钮使用同一段 Host 逻辑。
+
 ### 新增 MCP
 
 点击 `已接入 DSH` 右上角的 `新增 MCP`，选择一种方式：
@@ -173,6 +198,8 @@ pnpm build
 3. 用户接入、新增或编辑时，Host 重新读取源配置或表单数据，写入当前 profile 的 `cordis.patch.yml`。
 4. DSH Loader 监听 patch 变化并加载新的 MCP 条目。
 5. 页面在写入后刷新扫描结果，并显示 `已生效` 或 `重启后生效` 提示。
+6. 测试连接时，Host 从 loader 或扫描结果重新解析配置，新开一次 MCP 握手并返回耗时、协议信息和工具列表，不修改任何文件。
+7. 重连时，Host 调用 Cordis fiber 的 `update(config, true)` 原地重载 mcp-client，第二个参数让 Loader 跳过写回；等待重启完成后再做一次连接测试。
 
 ### HTTP 接口
 
@@ -185,6 +212,8 @@ pnpm build
 | `POST` | `/api/mcp-setting/unlink` | 移除当前 profile 中由本插件插入的条目 |
 | `GET` / `PUT` | `/api/mcp-setting/projects` | 读取或保存扫描的项目路径 |
 | `GET` / `PUT` / `POST` | `/api/mcp-setting/entry` | 读取详情、编辑、新增 MCP |
+| `POST` | `/api/mcp-setting/test` | 按 `entryId` 或扫描结果的 `key` 测试一次连接 |
+| `POST` | `/api/mcp-setting/reconnect` | 按 `entryId` 或 `serverName` 重新加载一条已接入的 MCP |
 
 ### 配置写入
 
@@ -201,6 +230,9 @@ pnpm build
 - URL 中的用户名、密码和敏感查询参数在返回浏览器前脱敏。
 - 编辑时敏感值不回传。留空表示保留原值，输入新值才会替换。
 - JSON 导入中的 env/header 值会作为普通字符串写入 profile patch。如果 JSON 包含真实令牌，请确认导入内容。
+- 测试连接只接受 `entryId` 或扫描结果的 `key`；真实命令、URL、环境变量和请求头由 Host 从 loader 或扫描结果读取，浏览器不能提交任意命令。
+- 重连只接受 `entryId` 或 `serverName`，并且只查找由 `@deepseek-ai/dsh-mcp-client` 提供的条目；不能重载任意插件，也不会写入配置文件。
+- 测试和重连日志只记录目标、传输方式、结果、耗时和错误码，不记录 URL、命令参数、环境变量和请求头的值。
 - Host 日志只记录条目 id、操作结果等诊断信息，不记录环境变量和请求头的值。
 
 ## 限制
@@ -211,6 +243,12 @@ pnpm build
 - 只有当前 profile patch 中由本插件插入的条目可以编辑或移除。
 - 同名但连接参数不同的 DSH 条目会显示 `名称冲突`；接入时会生成带数字后缀的建议名，也可以在弹窗中手动修改。
 - 写入配置后依赖 DSH HMR。HMR 未启用时，页面会提示重启后生效。
+- 测试连接会新开一个 stdio 子进程或 HTTP 会话，不复用 DSH 当前连接；只能单实例运行的服务可能在测试时产生额外实例或失败。
+- 连接测试的总超时为 20 秒。依赖 `npx` 冷启动或首次下载依赖的服务可能超时，可以稍后重试。
+- 测试通过只代表服务当前可以建立新的连接，不代表 DSH 持有的旧连接仍然有效。
+- 重连最多等待 20 秒让 mcp-client 完成重启；超时后它仍可能在后台继续重试，可以稍后再测试连接。
+- 只有已经在 DSH 中运行的 mcp-client 条目可以重连；已禁用的条目需要先在配置中启用。
+- 服务本身不可达时，重连会完成重载但连接测试仍然失败；服务恢复后 mcp-client 会按自己的重连策略继续尝试。
 - 不处理 MCP OAuth、凭据交互和 SSE。
 - 已选工作区路径保存在 `$DSH_HOME/mcp-setting/state.json`，只在本机使用。
 
@@ -245,6 +283,10 @@ src/host/actions.ts             接入、新增、编辑、移除动作
 src/host/patch.ts               YAML patch 读写与 AST 修改
 src/host/routes.ts              认证 HTTP 路由
 src/host/scan.ts                系统与项目 MCP 扫描
+src/host/probe.ts               stdio 与 Streamable HTTP 连接探测
+src/host/test.ts                测试连接的目标解析与响应
+src/host/reconnect.ts           mcp-client fiber 原地重载
+src/host/tool.ts                Agent 使用的 mcp_link_reconnect 工具
 src/host/parsers.ts             各客户端配置解析
 src/host/sources.ts             来源与路径定义
 src/host/state.ts               项目路径状态

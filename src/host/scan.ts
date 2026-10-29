@@ -39,6 +39,8 @@ export interface LoaderEntryLike {
   /** Cordis fiber 状态：2 = ACTIVE，3 = FAILED。 */
   readonly fiber?: {
     readonly state?: number
+    /** 已经求值并通过 schema 校验的运行时配置。 */
+    readonly config?: unknown
   }
 }
 

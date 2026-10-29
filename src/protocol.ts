@@ -214,6 +214,88 @@ export interface ProjectsResponse {
   readonly projects: readonly string[]
 }
 
+/** 测试连接失败的原因码；浏览器端按码显示本地化说明。 */
+export type TestFailureCode =
+  | 'unsupported'
+  | 'missing-command'
+  | 'missing-url'
+  | 'unresolved'
+  | 'spawn-failed'
+  | 'exited'
+  | 'closed'
+  | 'timeout'
+  | 'network'
+  | 'http-status'
+  | 'protocol'
+  | 'rpc-error'
+
+/** 发起一次连接测试；`entryId` 与 `key` 只能提供一个。 */
+export interface TestConnectionRequest {
+  /** 当前 DSH 已加载的条目 id。 */
+  readonly entryId?: string
+  /** 系统或项目扫描结果中的服务 key。 */
+  readonly key?: string
+}
+
+/** 一次连接测试的结果；连接失败也是正常的测试结果。 */
+export interface TestConnectionResult {
+  readonly ok: true
+  readonly target: 'dsh' | 'source'
+  readonly entryId?: string
+  readonly key?: string
+  readonly serverName: string
+  readonly transport: McpTransport
+  readonly connected: boolean
+  readonly durationMs: number
+  readonly checkedAt: string
+  /** 服务协商出的 MCP 协议版本。 */
+  readonly protocolVersion?: string
+  /** 服务在 initialize 响应里声明的名称和版本。 */
+  readonly serverInfo?: {
+    readonly name?: string
+    readonly version?: string
+  }
+  readonly toolCount?: number
+  /** 最多返回前 50 个工具名。 */
+  readonly toolNames?: readonly string[]
+  /** 连接成功但工具列表读取失败等非致命问题。 */
+  readonly warning?: string
+  readonly error?: {
+    readonly code: TestFailureCode
+    readonly message: string
+    /** 原始诊断信息，例如 HTTP 状态、进程 stderr 或 JSON-RPC 错误。 */
+    readonly detail?: string
+  }
+}
+
+/** 重新加载一条已接入 DSH 的 MCP 连接；`entryId` 与 `serverName` 只能提供一个。 */
+export interface ReconnectRequest {
+  /** 当前 DSH 已加载的条目 id。 */
+  readonly entryId?: string
+  /** 条目配置里的 serverName，例如错误信息 mcp-client(idea) 里的 idea。 */
+  readonly serverName?: string
+}
+
+/** 重连没有完成的原因。 */
+export type ReconnectFailureCode = 'not-running' | 'reload-failed' | 'timeout'
+
+/** 重连结果；连接仍然失败也是正常的重连结果。 */
+export interface ReconnectResponse {
+  readonly ok: true
+  readonly entryId: string
+  readonly serverName: string
+  readonly transport: McpTransport
+  /** mcp-client 条目是否重新加载完成。 */
+  readonly reloaded: boolean
+  readonly reloadDurationMs: number
+  /** 重连后立刻做的一次连接测试；重连没有完成时可能省略。 */
+  readonly test?: TestConnectionResult
+  readonly error?: {
+    readonly code: ReconnectFailureCode
+    readonly message: string
+  }
+}
+
 /** 统一错误响应。 */
 export interface ErrorResponse {
   readonly ok: false

@@ -1,6 +1,6 @@
 {
   "name": "dsh-mcp-link",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "在 DeepSeek Harness 中扫描、接入、新增和编辑 MCP 配置",
   "type": "module",
   "main": "lib/index.js",

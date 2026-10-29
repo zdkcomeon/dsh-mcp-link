@@ -1,9 +1,11 @@
 /** 注册在 DSH 认证通道下的 HTTP 接口。 */
-import type { CreateEntryRequest, ErrorResponse, LinkRequest, ProjectsRequest, UnlinkRequest, UpdateEntryRequest } from '../protocol.js'
+import type { CreateEntryRequest, ErrorResponse, LinkRequest, ProjectsRequest, ReconnectRequest, TestConnectionRequest, UnlinkRequest, UpdateEntryRequest } from '../protocol.js'
 import { API_BASE } from '../protocol.js'
 import { ActionError, createEntry, entryDetail, linkServer, saveProjectPaths, unlinkServer, updateEntry, type ActionContext } from './actions.js'
+import { reconnectMcp } from './reconnect.js'
 import { scanAll, type LoaderLike, type ProfileLike } from './scan.js'
 import { readProjects } from './state.js'
+import { testConnection } from './test.js'
 
 /** Connection Fetch 路由的最小结构。 */
 interface FetchRoute {
@@ -71,6 +73,18 @@ export function registerRoutes(context: RoutesContext): void {
       methods: ['GET', 'PUT', 'POST'],
       requestBody: 'buffered',
       fetch: request => handle(context, request, entry),
+    },
+    {
+      path: `${API_BASE}/test`,
+      methods: ['POST'],
+      requestBody: 'buffered',
+      fetch: request => handle(context, request, test),
+    },
+    {
+      path: `${API_BASE}/reconnect`,
+      methods: ['POST'],
+      requestBody: 'buffered',
+      fetch: request => handle(context, request, reconnect),
     },
   ]
   for (const route of routes) {
@@ -141,6 +155,40 @@ async function entry(context: RoutesContext, request: Request): Promise<Response
   }
   const response = await updateEntry(actionContext(context), body)
   context.log.info(`mcp_setting.entry_updated: entry=${body.entryId} applied=${String(response.applied)}`)
+  return json(response)
+}
+
+async function test(context: RoutesContext, request: Request): Promise<Response> {
+  const body = await readJson<TestConnectionRequest>(request)
+  if (body.entryId !== undefined && typeof body.entryId !== 'string') {
+    throw new ActionError(400, 'invalid-request', 'entryId 必须是字符串')
+  }
+  if (body.key !== undefined && typeof body.key !== 'string') {
+    throw new ActionError(400, 'invalid-request', 'key 必须是字符串')
+  }
+  const response = await testConnection(actionContext(context), body)
+  context.log.info(
+    `mcp_setting.connection_tested: target=${response.target} entry=${response.entryId ?? '-'} key=${response.key ?? '-'}`
+    + ` server=${response.serverName.replace(/\s+/gu, '_')} transport=${response.transport} connected=${String(response.connected)}`
+    + ` duration=${String(response.durationMs)}ms${response.error === undefined ? '' : ` code=${response.error.code}`}`,
+  )
+  return json(response)
+}
+
+async function reconnect(context: RoutesContext, request: Request): Promise<Response> {
+  const body = await readJson<ReconnectRequest>(request)
+  if (body.entryId !== undefined && typeof body.entryId !== 'string') {
+    throw new ActionError(400, 'invalid-request', 'entryId 必须是字符串')
+  }
+  if (body.serverName !== undefined && typeof body.serverName !== 'string') {
+    throw new ActionError(400, 'invalid-request', 'serverName 必须是字符串')
+  }
+  const response = await reconnectMcp(actionContext(context), body)
+  context.log.info(
+    `mcp_setting.reconnect_completed: entry=${response.entryId} server=${response.serverName.replace(/\s+/gu, '_')}`
+    + ` transport=${response.transport} reloaded=${String(response.reloaded)} duration=${String(response.reloadDurationMs)}ms`
+    + ` connected=${String(response.test?.connected === true)}${response.error === undefined ? '' : ` code=${response.error.code}`}`,
+  )
   return json(response)
 }
 

@@ -1,16 +1,24 @@
 # dsh-mcp-link
 
-在 DeepSeek Harness 中集中查看本机 MCP 配置，并将选中的服务接入当前 DSH profile。
+把 Cursor、Claude Code、Codex CLI、Gemini CLI、VS Code 等 13 种客户端里已有的 MCP 配置，一键接入 DeepSeek Harness；接入后还能测试连接、断线重连。
 
-`dsh-mcp-link` 是一个 DSH 插件，提供左侧导航入口和设置页入口，支持扫描系统 MCP 配置、按来源切换、扫描项目工作区、JSON 导入、图形化新增、编辑和移除。
+[![npm version](https://img.shields.io/npm/v/dsh-mcp-link.svg)](https://www.npmjs.com/package/dsh-mcp-link)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-mcp-link.svg)](https://www.npmjs.com/package/dsh-mcp-link)
+[![node](https://img.shields.io/node/v/dsh-mcp-link.svg)](https://www.npmjs.com/package/dsh-mcp-link)
+[![license](https://img.shields.io/npm/l/dsh-mcp-link.svg)](LICENSE)
+[![DSH](https://img.shields.io/badge/DSH-0.2%2B-blue.svg)](https://github.com/deepseek-ai/deepseek-harness)
 
 DSH 0.2+ · Node.js 22.19+ · MIT License
 
-[![npm version](https://img.shields.io/npm/v/dsh-mcp-link.svg)](https://www.npmjs.com/package/dsh-mcp-link)
+npm: [dsh-mcp-link](https://www.npmjs.com/package/dsh-mcp-link) · GitHub: [zdkcomeon/dsh-mcp-link](https://github.com/zdkcomeon/dsh-mcp-link) · 发版说明：[RELEASE_NOTES.md](RELEASE_NOTES.md)
 
-npm: [dsh-mcp-link](https://www.npmjs.com/package/dsh-mcp-link) · GitHub: [zdkcomeon/dsh-mcp-link](https://github.com/zdkcomeon/dsh-mcp-link)
+```sh
+dsh plugin --profile desktop add dsh-mcp-link   # Web profile 用 --profile web
+```
 
-发版说明：[RELEASE_NOTES.md](RELEASE_NOTES.md)
+重启 DSH，左侧导航点 `MCP 链接`。
+
+**为什么需要它**：MCP 配置散落在各个客户端里，换到 DSH 要手抄一遍命令、参数、工作目录、环境变量和请求头，漏一个就连不上；接进来之后碰到 `server is disconnected`，又很难判断是配置写错、服务挂了，还是 DSH 侧的连接已经失效。这个插件把扫描、接入、测试、重连放在同一个页面，Agent 也能通过 `mcp_link_reconnect` 自己修。
 
 ![MCP 链接主面板](https://raw.githubusercontent.com/zdkcomeon/dsh-mcp-link/main/docs/screenshots/01-overview.png)
 
@@ -26,6 +34,7 @@ npm: [dsh-mcp-link](https://www.npmjs.com/package/dsh-mcp-link) · GitHub: [zdkc
 - [安全](#安全)
 - [限制](#限制)
 - [开发](#开发)
+- [English](#english)
 
 ## 功能
 
@@ -302,6 +311,23 @@ tests/                          Node 单元测试
 docs/screenshots/               README 截图
 cordis.patch.yml                插件 bundle 的配置行
 ```
+
+## English
+
+`dsh-mcp-link` is a DeepSeek Harness (DSH) plugin that imports the MCP servers you already configured in other clients into your current DSH profile, then checks and repairs those connections.
+
+- Scans Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, Codex CLI, Gemini CLI, Cline, Roo Code, Continue, OpenCode, Zed and LM Studio, grouped by source.
+- Links a server by appending an entry to the current profile's `cordis.patch.yml` through a YAML AST, so comments and untouched `!!js` scalars survive.
+- Scans project-level `.mcp.json`, `.cursor/mcp.json` and `.vscode/mcp.json` across the workspaces selected in DSH, and substitutes `${workspaceFolder}` and friends.
+- Tests a connection by opening a fresh stdio or Streamable HTTP handshake, then reports latency, negotiated protocol version, server info and tool count.
+- Reconnects a broken `@deepseek-ai/dsh-mcp-client` entry in place; the same operation is exposed to agents as the `mcp_link_reconnect` tool.
+- Keeps environment variables and request headers on the host: the browser only receives key names and whether a key looks secret.
+
+```sh
+dsh plugin --profile desktop add dsh-mcp-link   # use --profile web for the web profile
+```
+
+Restart DSH, then open `MCP 链接` in the sidebar. Requires DSH `0.2.0-rc.2` or newer. Not supported: SSE transport, OAuth flows, and configs with unresolved `${input:...}` placeholders.
 
 ## License
 

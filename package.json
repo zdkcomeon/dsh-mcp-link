@@ -92,6 +92,13 @@
     "dsh-plugin",
     "deepseek-harness",
     "mcp",
-    "model-context-protocol"
+    "mcp-client",
+    "mcp-config",
+    "model-context-protocol",
+    "cursor",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "vscode"
   ]
 }
